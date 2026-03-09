@@ -1,0 +1,543 @@
+---
+title: "Multimodal Live API"
+description: "Build real-time, bidirectional voice and video interactions with Gemini using the Live API for low-latency multimodal conversations"
+---
+
+The [Gemini Live API](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/live-api) enables low-latency bidirectional voice and video interactions with Gemini. The Live API can process text, audio, and video input in real-time, providing text and audio output for natural conversational experiences.
+
+## Overview
+
+The Live API provides WebSocket-based streaming for real-time multimodal conversations with sub-second latency:
+
+<CardGroup cols={2}>
+  <Card title="Real-Time Audio" icon="microphone">
+    Stream audio input and receive natural speech responses with native audio processing
+  </Card>
+  <Card title="Video Streaming" icon="video">
+    Send video frames for visual understanding in real-time conversations
+  </Card>
+  <Card title="Low Latency" icon="gauge-high">
+    Sub-second response times for natural, interactive experiences
+  </Card>
+  <Card title="Function Calling" icon="wrench">
+    Integrate tools and APIs during live conversations
+  </Card>
+</CardGroup>
+
+## Key Features
+
+- **Bidirectional streaming**: Send and receive data simultaneously
+- **Native audio processing**: PCM audio at 24kHz sampling rate
+- **Barge-in support**: Interrupt model responses naturally
+- **Multimodal input**: Combine text, audio, and video in the same session
+- **Tool integration**: Call functions during conversations
+
+## Getting Started
+
+<Steps>
+  <Step title="Install Dependencies">
+    Install the WebSocket library:
+    
+    ```bash
+    pip install --upgrade websockets
+    ```
+  </Step>
+  
+  <Step title="Set Up Authentication">
+    Configure your Google Cloud project:
+    
+    ```python
+    import os
+    
+    PROJECT_ID = "your-project-id"
+    LOCATION = "us-central1"
+    MODEL_ID = "gemini-live-2.5-flash-native-audio"
+    
+    # Generate access token
+    import subprocess
+    result = subprocess.run(
+        ["gcloud", "auth", "print-access-token"],
+        capture_output=True,
+        text=True
+    )
+    access_token = result.stdout.strip()
+    ```
+  </Step>
+  
+  <Step title="Establish WebSocket Connection">
+    Connect to the Live API endpoint:
+    
+    ```python
+    import websockets
+    import json
+    
+    api_host = f"{LOCATION}-aiplatform.googleapis.com"
+    service_url = (
+        f"wss://{api_host}/ws/google.cloud.aiplatform.v1.LlmBidiService/"
+        f"BidiGenerateContent"
+    )
+    
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+    
+    async with websockets.connect(service_url, additional_headers=headers) as ws:
+        print("Connected to Gemini Live API")
+    ```
+  </Step>
+</Steps>
+
+## Session Establishment
+
+The Live API follows a strict WebSocket sub-protocol with four phases:
+
+### 1. Handshake
+
+Establish the WebSocket connection with OAuth 2.0 authentication:
+
+```python
+import websockets
+
+api_host = "us-central1-aiplatform.googleapis.com"
+service_url = (
+    f"wss://{api_host}/ws/google.cloud.aiplatform.v1.LlmBidiService/"
+    f"BidiGenerateContent"
+)
+
+headers = {
+    "Authorization": f"Bearer {access_token}",
+    "Content-Type": "application/json"
+}
+
+async with websockets.connect(service_url, additional_headers=headers) as ws:
+    print("Handshake complete")
+```
+
+### 2. Setup
+
+Configure the session with model parameters:
+
+```python
+setup = {
+    "setup": {
+        "model": f"projects/{PROJECT_ID}/locations/{LOCATION}/publishers/google/models/{MODEL_ID}",
+        "generation_config": {
+            "response_modalities": ["AUDIO"],
+            "speech_config": {
+                "voice_config": {
+                    "prebuilt_voice_config": {
+                        "voice_name": "Aoede"
+                    }
+                }
+            }
+        },
+        "system_instruction": {
+            "parts": [{"text": "You are a helpful assistant."}]
+        }
+    }
+}
+
+# Send setup message
+await ws.send(json.dumps(setup))
+setup_response = await ws.recv()
+print("Setup complete")
+```
+
+### 3. Session Loop
+
+Run bidirectional send and receive loops concurrently:
+
+```python
+import asyncio
+import base64
+import numpy as np
+
+async def main():
+    async with websockets.connect(service_url, additional_headers=headers) as ws:
+        # Send setup
+        await ws.send(json.dumps(setup))
+        await ws.recv()
+        
+        # Define send loop
+        async def send_loop():
+            try:
+                while True:
+                    # Simulate reading audio chunks (20ms PCM16 at 24kHz)
+                    # In production, read from microphone
+                    await asyncio.sleep(0.02)
+            except asyncio.CancelledError:
+                pass
+        
+        # Define receive loop
+        async def receive_loop():
+            try:
+                async for message in ws:
+                    response = json.loads(message)
+                    
+                    # Handle audio output
+                    if "serverContent" in response:
+                        parts = response["serverContent"].get("modelTurn", {}).get("parts", [])
+                        for part in parts:
+                            if "inlineData" in part:
+                                # Audio data is base64-encoded PCM
+                                pcm_data = base64.b64decode(part["inlineData"]["data"])
+                                # Play audio or buffer for playback
+                                
+                    # Handle turn completion
+                    if response.get("serverContent", {}).get("turnComplete"):
+                        print("Turn complete")
+                        
+                    # Handle interruption (barge-in)
+                    if response.get("interrupted"):
+                        print("Model interrupted - stop playback")
+                        
+            except websockets.exceptions.ConnectionClosed:
+                print("Connection closed")
+        
+        # Run both loops concurrently
+        await asyncio.gather(send_loop(), receive_loop())
+
+await main()
+```
+
+### 4. Termination
+
+Close the WebSocket connection:
+
+```python
+await ws.close()
+print("Session terminated")
+```
+
+## Message Types
+
+### Client Messages
+
+<Tabs>
+  <Tab title="Text Input">
+    Send text messages to the model:
+    
+    ```python
+    async def send_text(ws, text_input: str):
+        msg = {
+            "client_content": {
+                "turns": [
+                    {
+                        "role": "user",
+                        "parts": [{"text": text_input}]
+                    }
+                ],
+                "turn_complete": True
+            }
+        }
+        await ws.send(json.dumps(msg))
+    
+    await send_text(ws, "Hello, Gemini!")
+    ```
+  </Tab>
+  
+  <Tab title="Audio Streaming">
+    Stream audio chunks in real-time:
+    
+    ```python
+    async def send_audio(ws, audio_chunk: bytes):
+        # audio_chunk should be PCM16, mono, 24kHz
+        encoded = base64.b64encode(audio_chunk).decode('utf-8')
+        
+        msg = {
+            "realtime_input": {
+                "media_chunks": [
+                    {
+                        "mime_type": "audio/pcm",
+                        "data": encoded
+                    }
+                ]
+            }
+        }
+        await ws.send(json.dumps(msg))
+    ```
+  </Tab>
+  
+  <Tab title="Video Streaming">
+    Send video frames for visual understanding:
+    
+    ```python
+    async def send_video_frame(ws, frame_data: bytes):
+        # frame_data should be JPEG-encoded image
+        encoded = base64.b64encode(frame_data).decode('utf-8')
+        
+        msg = {
+            "realtime_input": {
+                "media_chunks": [
+                    {
+                        "mime_type": "image/jpeg",
+                        "data": encoded
+                    }
+                ]
+            }
+        }
+        await ws.send(json.dumps(msg))
+    ```
+  </Tab>
+  
+  <Tab title="Tool Response">
+    Send function call results back to the model:
+    
+    ```python
+    async def send_tool_response(ws, function_name: str, result: dict):
+        msg = {
+            "tool_response": {
+                "function_responses": [
+                    {
+                        "name": function_name,
+                        "response": result
+                    }
+                ]
+            }
+        }
+        await ws.send(json.dumps(msg))
+    ```
+  </Tab>
+</Tabs>
+
+### Server Messages
+
+Handle different types of responses from the server:
+
+```python
+async def handle_server_message(message: str):
+    response = json.loads(message)
+    
+    # Model's text/audio output
+    if "serverContent" in response:
+        model_turn = response["serverContent"].get("modelTurn", {})
+        
+        for part in model_turn.get("parts", []):
+            # Text output
+            if "text" in part:
+                print(f"Model: {part['text']}")
+            
+            # Audio output (PCM16 at 24kHz)
+            if "inlineData" in part:
+                audio_data = base64.b64decode(part["inlineData"]["data"])
+                # Play audio through speakers
+                play_audio(audio_data)
+        
+        # Check if model finished speaking
+        if response["serverContent"].get("turnComplete"):
+            print("Model finished turn")
+    
+    # Model wants to call a function
+    if "toolCall" in response:
+        for call in response["toolCall"].get("functionCalls", []):
+            function_name = call["name"]
+            args = call["args"]
+            
+            # Execute function
+            result = execute_function(function_name, args)
+            
+            # Send result back
+            await send_tool_response(ws, function_name, result)
+    
+    # Model was interrupted (user started speaking)
+    if response.get("interrupted"):
+        print("Barge-in detected - stopping playback")
+        stop_audio_playback()
+```
+
+## Complete Example: Text to Speech
+
+A simple text-to-speech example:
+
+```python
+import asyncio
+import websockets
+import json
+import base64
+import numpy as np
+from IPython.display import Audio, display
+
+async def text_to_speech(text_input: str):
+    async with websockets.connect(service_url, additional_headers=headers) as ws:
+        # Setup
+        await ws.send(json.dumps(setup))
+        await ws.recv()
+        
+        # Send text
+        msg = {
+            "client_content": {
+                "turns": [{"role": "user", "parts": [{"text": text_input}]}],
+                "turn_complete": True
+            }
+        }
+        await ws.send(json.dumps(msg))
+        
+        # Collect audio response
+        audio_data = []
+        async for message in ws:
+            response = json.loads(message)
+            
+            # Extract audio
+            if "serverContent" in response:
+                parts = response["serverContent"].get("modelTurn", {}).get("parts", [])
+                for part in parts:
+                    if "inlineData" in part:
+                        pcm_data = base64.b64decode(part["inlineData"]["data"])
+                        audio_data.append(np.frombuffer(pcm_data, dtype=np.int16))
+            
+            # Check if complete
+            if response.get("serverContent", {}).get("turnComplete"):
+                break
+        
+        # Play audio
+        if audio_data:
+            display(Audio(np.concatenate(audio_data), rate=24000, autoplay=True))
+
+# Use it
+await text_to_speech("Hello! How are you today?")
+```
+
+## Function Calling in Live Sessions
+
+Integrate tools and APIs during conversations:
+
+```python
+# Define tools in setup
+setup_with_tools = {
+    "setup": {
+        "model": model_path,
+        "tools": [
+            {
+                "function_declarations": [
+                    {
+                        "name": "get_weather",
+                        "description": "Get current weather for a location",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "location": {
+                                    "type": "string",
+                                    "description": "City name"
+                                }
+                            },
+                            "required": ["location"]
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+}
+
+# Handle function calls in receive loop
+async def receive_with_tools():
+    async for message in ws:
+        response = json.loads(message)
+        
+        if "toolCall" in response:
+            for call in response["toolCall"].get("functionCalls", []):
+                if call["name"] == "get_weather":
+                    location = call["args"]["location"]
+                    weather = fetch_weather(location)  # Your implementation
+                    
+                    # Send result back
+                    await send_tool_response(ws, "get_weather", {
+                        "temperature": weather["temp"],
+                        "condition": weather["condition"]
+                    })
+```
+
+## Use Cases
+
+<CardGroup cols={2}>
+  <Card title="Voice Assistants" icon="headset">
+    Build natural voice interfaces for customer support, information retrieval, and task automation
+  </Card>
+  
+  <Card title="Real-Time Translation" icon="language">
+    Provide live translation services with audio input and output
+  </Card>
+  
+  <Card title="Gaming NPCs" icon="gamepad">
+    Create interactive game characters with natural voice responses
+  </Card>
+  
+  <Card title="Visual Q&A" icon="camera">
+    Answer questions about live video feeds or camera input
+  </Card>
+  
+  <Card title="Customer Service" icon="phone">
+    Handle customer inquiries with voice and screen sharing
+  </Card>
+  
+  <Card title="Education" icon="graduation-cap">
+    Interactive tutoring with multimodal explanations
+  </Card>
+</CardGroup>
+
+## Best Practices
+
+<Note>
+**Audio Format Requirements**
+- Format: PCM16 (Linear 16-bit PCM)
+- Sample rate: 24kHz
+- Channels: Mono (1 channel)
+- Chunk size: ~20ms recommended (480 samples)
+</Note>
+
+<Warning>
+**Handle Barge-In Properly**
+
+Always stop audio playback immediately when receiving an `interrupted` message. Continuing to play after interruption creates a poor user experience.
+
+```python
+if response.get("interrupted"):
+    audio_queue.clear()
+    stop_playback()
+```
+</Warning>
+
+### Performance Tips
+
+1. **Use asyncio**: Run send and receive loops concurrently for lowest latency
+2. **Buffer management**: Keep audio buffers small to minimize delay
+3. **Error handling**: Implement reconnection logic for network issues
+4. **Token expiration**: Refresh OAuth tokens before they expire (default 60 minutes)
+
+```python
+# Refresh token before expiration
+import time
+
+token_expiry = time.time() + 3600  # 1 hour
+
+if time.time() > token_expiry - 300:  # 5 min before expiry
+    access_token = get_new_token()
+    # Reconnect with new token
+```
+
+## Supported Models
+
+The Live API supports specific Gemini models optimized for real-time interaction:
+
+- `gemini-live-2.5-flash-native-audio`: Best for voice interactions
+- `gemini-2.0-flash-exp`: Experimental with multimodal support
+
+See the [official documentation](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/live-api#supported_models) for the latest model availability.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="WebSocket Demo App" icon="code" href="https://github.com/GoogleCloudPlatform/generative-ai/tree/main/gemini/multimodal-live-api/websocket-demo-app">
+    Complete reference implementation with React frontend
+  </Card>
+  <Card title="Native Audio SDK" icon="microphone" href="/gemini/audio">
+    Higher-level SDK for audio interactions
+  </Card>
+  <Card title="Function Calling" icon="wrench" href="/gemini/function-calling">
+    Learn more about integrating tools
+  </Card>
+  <Card title="Pricing" icon="dollar-sign" href="https://cloud.google.com/vertex-ai/pricing">
+    View Live API pricing details
+  </Card>
+</CardGroup>

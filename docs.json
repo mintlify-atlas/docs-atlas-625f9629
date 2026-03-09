@@ -42,11 +42,14 @@
               "gemini/overview",
               "gemini/getting-started",
               "gemini/multimodal",
+              "gemini/multimodal-live-api",
               "gemini/function-calling",
               "gemini/grounding",
               "gemini/context-caching",
               "gemini/code-execution",
-              "gemini/batch-prediction"
+              "gemini/batch-prediction",
+              "gemini/tuning",
+              "gemini/mcp"
             ]
           },
           {

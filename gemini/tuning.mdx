@@ -1,0 +1,419 @@
+---
+title: "Gemini Model Tuning"
+description: "Fine-tune Gemini models using Supervised Fine-Tuning (SFT) and Direct Preference Optimization (DPO) to adapt models to your specific tasks and preferences"
+---
+
+Gemini supports two powerful tuning approaches to customize model behavior for your specific use cases: **Supervised Fine-Tuning (SFT)** for task-specific adaptation and **Direct Preference Optimization (DPO)** for aligning models with human preferences.
+
+## Overview
+
+Fine-tuning allows you to adapt Gemini's base capabilities to your specific domain, style, or task requirements:
+
+<CardGroup cols={2}>
+  <Card title="Supervised Fine-Tuning" icon="code">
+    Train models on labeled examples to specialize in specific tasks like Q&A, summarization, or classification
+  </Card>
+  <Card title="Preference Optimization" icon="heart">
+    Align model outputs with human preferences by learning from ranked response pairs
+  </Card>
+</CardGroup>
+
+## Supervised Fine-Tuning (SFT)
+
+Supervised fine-tuning uses labeled training data to refine the base model's capabilities toward your specific tasks. Each training example demonstrates the desired output for a given input.
+
+### When to Use SFT
+
+- Adapting models to domain-specific terminology
+- Teaching specific output formats or structures
+- Improving performance on specialized tasks
+- Reducing prompt engineering complexity
+
+### Data Preparation
+
+Training data should be in JSONL format with input-output pairs:
+
+<CodeGroup>
+```json Training Data Format
+{
+  "contents": [
+    {
+      "role": "user",
+      "parts": [{"text": "Context: The Normans were an ethnic group...\nQuestion: In what country is Normandy located?"}]
+    }
+  ],
+  "completion": {
+    "role": "model",
+    "parts": [{"text": "France"}]
+  }
+}
+```
+
+```python Data Conversion
+import pandas as pd
+import json
+
+# Load your data
+df = pd.read_csv("training_data.csv")
+
+# Convert to JSONL format
+with open("train_data.jsonl", "w") as f:
+    for _, row in df.iterrows():
+        example = {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": f"Context: {row['context']}\nQuestion: {row['question']}"}]
+                }
+            ],
+            "completion": {
+                "role": "model",
+                "parts": [{"text": row['answer']}]
+            }
+        }
+        f.write(json.dumps(example) + "\n")
+```
+</CodeGroup>
+
+<Note>
+Ensure your training data is high-quality, well-labeled, and directly relevant to your target task. Low-quality data can adversely affect performance and introduce bias.
+</Note>
+
+### Training Process
+
+<Steps>
+  <Step title="Initialize the SDK">
+    Set up your Google Cloud project and initialize the Gemini client:
+    
+    ```python
+    from google import genai
+    from google.genai import types
+    
+    PROJECT_ID = "your-project-id"
+    LOCATION = "us-central1"
+    
+    client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+    ```
+  </Step>
+  
+  <Step title="Upload Training Data">
+    Upload your JSONL files to Google Cloud Storage:
+    
+    ```bash
+    gsutil cp train_data.jsonl gs://your-bucket/tuning/
+    gsutil cp validation_data.jsonl gs://your-bucket/tuning/
+    ```
+  </Step>
+  
+  <Step title="Create Tuning Job">
+    Start the supervised fine-tuning job:
+    
+    ```python
+    # Create tuning job configuration
+    tuning_job = client.tuning_jobs.create(
+        base_model="gemini-2.0-flash-001",
+        training_dataset="gs://your-bucket/tuning/train_data.jsonl",
+        validation_dataset="gs://your-bucket/tuning/validation_data.jsonl",
+        tuned_model_display_name="gemini-qa-tuned",
+        epochs=3,
+        learning_rate=0.001
+    )
+    
+    print(f"Tuning job created: {tuning_job.name}")
+    ```
+  </Step>
+  
+  <Step title="Monitor Training">
+    Check the status of your tuning job:
+    
+    ```python
+    # Poll for completion
+    job_status = client.tuning_jobs.get(tuning_job.name)
+    print(f"Status: {job_status.state}")
+    print(f"Progress: {job_status.tuning_progress}")
+    ```
+  </Step>
+  
+  <Step title="Deploy and Use">
+    Once training completes, use your fine-tuned model:
+    
+    ```python
+    # Use the tuned model
+    response = client.models.generate_content(
+        model=tuning_job.tuned_model_endpoint,
+        contents="Context: ...\nQuestion: What is the capital of France?"
+    )
+    
+    print(response.text)
+    ```
+  </Step>
+</Steps>
+
+### Evaluation
+
+Evaluate your fine-tuned model on a held-out test set:
+
+```python
+import pandas as pd
+
+test_df = pd.read_csv("test_data.csv")
+predictions = []
+
+for _, row in test_df.iterrows():
+    prompt = f"Context: {row['context']}\nQuestion: {row['question']}"
+    response = client.models.generate_content(
+        model=tuned_model_endpoint,
+        contents=prompt
+    )
+    predictions.append(response.text)
+
+# Calculate metrics
+from sklearn.metrics import accuracy_score
+accuracy = accuracy_score(test_df['answer'], predictions)
+print(f"Accuracy: {accuracy:.2%}")
+```
+
+## Direct Preference Optimization (DPO)
+
+DPO teaches Gemini to generate better responses by learning from human preferences. Instead of labeled "correct" answers, you provide pairs of responses where humans preferred one over the other.
+
+### Understanding DPO
+
+Rather than teaching the "right answer," DPO shows the model two responses and indicates which style or approach humans found more helpful:
+
+```
+Prompt: "Explain quantum computing"
+✅ Preferred: Clear, concise explanation with analogies
+❌ Rejected: Overly technical jargon without context
+```
+
+### Data Format for DPO
+
+DPO requires preference pairs in a specific format:
+
+<CodeGroup>
+```json DPO Training Format
+{
+  "contents": [
+    {"role": "user", "parts": [{"text": "Explain how photosynthesis works"}]}
+  ],
+  "completions": [
+    {
+      "score": 1.0,
+      "completion": {
+        "role": "model",
+        "parts": [{"text": "Photosynthesis is the process where plants convert sunlight into energy..."}]
+      }
+    },
+    {
+      "score": 0.0,
+      "completion": {
+        "role": "model",
+        "parts": [{"text": "Plants use light. It makes food."}]
+      }
+    }
+  ]
+}
+```
+
+```python Convert Preference Data
+def transform_to_gemini_format(example: dict) -> dict:
+    """Convert preference data to Gemini's DPO format.
+    
+    Args:
+        example: Dict with 'chosen' and 'rejected' response pairs
+        
+    Returns:
+        Dict in Gemini's preference tuning format
+    """
+    chosen = example["chosen"]
+    rejected = example["rejected"]
+    
+    # Extract user prompt and responses
+    user_prompt = chosen[0].get("content", "").strip()
+    chosen_response = chosen[1].get("content", "").strip()
+    rejected_response = rejected[1].get("content", "").strip()
+    
+    return {
+        "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+        "completions": [
+            {
+                "score": 1.0,
+                "completion": {
+                    "role": "model",
+                    "parts": [{"text": chosen_response}]
+                }
+            },
+            {
+                "score": 0.0,
+                "completion": {
+                    "role": "model",
+                    "parts": [{"text": rejected_response}]
+                }
+            }
+        ]
+    }
+```
+</CodeGroup>
+
+### Training with DPO
+
+<Steps>
+  <Step title="Prepare Preference Data">
+    Transform your preference dataset:
+    
+    ```python
+    from datasets import load_dataset
+    
+    # Load preference dataset (e.g., UltraFeedback)
+    dataset = load_dataset("zhengr/ultrafeedback_binarized")
+    
+    # Transform to Gemini format
+    train_transformed = []
+    for example in dataset["train_prefs"][:1000]:
+        result = transform_to_gemini_format(example)
+        if result:
+            train_transformed.append(result)
+    
+    # Save as JSONL
+    with open("dpo_train.jsonl", "w") as f:
+        for item in train_transformed:
+            f.write(json.dumps(item) + "\n")
+    ```
+  </Step>
+  
+  <Step title="Upload to Cloud Storage">
+    ```bash
+    gsutil cp dpo_train.jsonl gs://your-bucket/dpo/
+    gsutil cp dpo_validation.jsonl gs://your-bucket/dpo/
+    ```
+  </Step>
+  
+  <Step title="Start DPO Training">
+    ```python
+    # Create DPO tuning job
+    dpo_job = client.tuning_jobs.create(
+        base_model="gemini-2.0-flash-001",
+        training_dataset="gs://your-bucket/dpo/dpo_train.jsonl",
+        validation_dataset="gs://your-bucket/dpo/dpo_validation.jsonl",
+        tuned_model_display_name="gemini-dpo-tuned",
+        tuning_method="dpo",
+        epochs=2,
+        learning_rate=0.0001
+    )
+    ```
+  </Step>
+  
+  <Step title="Compare Before and After">
+    Test the model's improved behavior:
+    
+    ```python
+    # Test with base model
+    base_response = client.models.generate_content(
+        model="gemini-2.0-flash-001",
+        contents="Explain quantum computing"
+    )
+    
+    # Test with DPO-tuned model
+    tuned_response = client.models.generate_content(
+        model=dpo_job.tuned_model_endpoint,
+        contents="Explain quantum computing"
+    )
+    
+    print("Base model:", base_response.text)
+    print("DPO-tuned:", tuned_response.text)
+    ```
+  </Step>
+</Steps>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Data Quality" icon="sparkles">
+    - Use high-quality, diverse training examples
+    - Aim for 500-10,000+ examples for production
+    - Balance your dataset across different scenarios
+  </Card>
+  
+  <Card title="Evaluation Strategy" icon="chart-line">
+    - Always use a separate validation set
+    - Test on real-world scenarios
+    - Monitor for overfitting
+  </Card>
+  
+  <Card title="Hyperparameter Tuning" icon="sliders">
+    - Start with default learning rates
+    - Use 2-5 epochs for most tasks
+    - Experiment with batch sizes
+  </Card>
+  
+  <Card title="Cost Optimization" icon="coins">
+    - Start with small datasets to validate approach
+    - Use the token estimation tool to calculate costs
+    - Consider using Gemini Flash for faster, cheaper tuning
+  </Card>
+</CardGroup>
+
+<Warning>
+Fine-tuning can introduce or amplify biases present in your training data. Always evaluate outputs for fairness, safety, and alignment with your values before deploying to production.
+</Warning>
+
+## Multimodal Fine-Tuning
+
+Gemini supports fine-tuning on multimodal data including images:
+
+```python
+# Multimodal training example
+example = {
+    "contents": [
+        {
+            "role": "user",
+            "parts": [
+                {"text": "Describe this image"},
+                {"inline_data": {
+                    "mime_type": "image/jpeg",
+                    "data": base64_image_data
+                }}
+            ]
+        }
+    ],
+    "completion": {
+        "role": "model",
+        "parts": [{"text": "This image shows a manufacturing defect..."}]
+    }
+}
+```
+
+## Cost Estimation
+
+Estimate tuning costs before training:
+
+```python
+# Token count estimation
+from vertexai.preview.tuning import sft
+
+estimate = sft.estimate_tuning_cost(
+    training_dataset_uri="gs://your-bucket/train_data.jsonl",
+    base_model="gemini-2.0-flash-001"
+)
+
+print(f"Estimated tokens: {estimate.token_count:,}")
+print(f"Estimated cost: ${estimate.estimated_cost:.2f}")
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Model Evaluation" icon="microscope" href="/gemini/evaluation">
+    Evaluate your fine-tuned models with custom metrics
+  </Card>
+  <Card title="Deployment" icon="rocket" href="/gemini/deployment">
+    Deploy tuned models to production endpoints
+  </Card>
+  <Card title="Function Calling" icon="function" href="/gemini/function-calling">
+    Combine tuning with function calling capabilities
+  </Card>
+  <Card title="Pricing" icon="dollar-sign" href="https://cloud.google.com/vertex-ai/pricing">
+    View detailed pricing for tuning operations
+  </Card>
+</CardGroup>
