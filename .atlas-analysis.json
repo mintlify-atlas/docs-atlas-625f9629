@@ -1,0 +1,187 @@
+{
+  "projectType": "ai-ml",
+  "projectName": "Generative AI on Google Cloud",
+  "projectDescription": "Sample code and notebooks for building generative AI applications with Gemini on Vertex AI.",
+  "theme": "palm",
+  "primaryColor": "#f3871a",
+  "lightColor": "#35a953",
+  "darkColor": "#4483f3",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "setup",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Gemini Models",
+            "pages": [
+              "gemini/overview",
+              "gemini/getting-started",
+              "gemini/multimodal",
+              "gemini/function-calling",
+              "gemini/grounding",
+              "gemini/context-caching",
+              "gemini/code-execution",
+              "gemini/batch-prediction"
+            ]
+          },
+          {
+            "group": "Agents",
+            "pages": [
+              "agents/overview",
+              "agents/agent-engine",
+              "agents/adk",
+              "agents/data-analytics"
+            ]
+          },
+          {
+            "group": "RAG & Search",
+            "pages": [
+              "rag/overview",
+              "rag/rag-engine",
+              "rag/vertex-ai-search",
+              "rag/grounding-techniques"
+            ]
+          },
+          {
+            "group": "Embeddings & Vector Search",
+            "pages": [
+              "embeddings/overview",
+              "embeddings/text-embeddings",
+              "embeddings/multimodal-embeddings",
+              "embeddings/vector-search",
+              "embeddings/hybrid-search"
+            ]
+          },
+          {
+            "group": "Vision",
+            "pages": [
+              "vision/overview",
+              "vision/image-generation",
+              "vision/image-editing",
+              "vision/visual-qa"
+            ]
+          },
+          {
+            "group": "Audio",
+            "pages": [
+              "audio/overview",
+              "audio/speech-recognition"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Use Cases",
+        "groups": [
+          {
+            "group": "Enterprise Applications",
+            "pages": [
+              "use-cases/overview",
+              "use-cases/document-processing",
+              "use-cases/customer-support",
+              "use-cases/code-generation",
+              "use-cases/data-analytics"
+            ]
+          },
+          {
+            "group": "Industry Solutions",
+            "pages": [
+              "use-cases/education",
+              "use-cases/healthcare",
+              "use-cases/marketing",
+              "use-cases/finance"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Advanced",
+        "groups": [
+          {
+            "group": "Evaluation & Testing",
+            "pages": [
+              "advanced/evaluation/overview",
+              "advanced/evaluation/gen-ai-eval",
+              "advanced/evaluation/agent-evaluation",
+              "advanced/evaluation/model-migration"
+            ]
+          },
+          {
+            "group": "Production Deployment",
+            "pages": [
+              "advanced/orchestration",
+              "advanced/reasoning-engine",
+              "advanced/model-optimizer",
+              "advanced/responsible-ai"
+            ]
+          },
+          {
+            "group": "Open Models",
+            "pages": [
+              "advanced/open-models/overview",
+              "advanced/open-models/model-garden",
+              "advanced/open-models/fine-tuning",
+              "advanced/open-models/serving"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Sample Apps",
+        "groups": [
+          {
+            "group": "Applications",
+            "pages": [
+              "sample-apps/overview",
+              "sample-apps/genwealth",
+              "sample-apps/fixmycar",
+              "sample-apps/finance-advisor",
+              "sample-apps/live-telephony"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Gemini multimodal AI models",
+    "Function calling and tool use",
+    "RAG and grounding with Vertex AI",
+    "Agent development with ADK",
+    "Vector search and embeddings",
+    "Image generation with Imagen",
+    "Speech processing with Chirp",
+    "Model evaluation framework",
+    "Production orchestration tools",
+    "Sample applications and notebooks"
+  ],
+  "publicApiSurface": [
+    "Gemini 3.1 Pro model",
+    "Gemini Flash models",
+    "Vertex AI Python SDK",
+    "Agent Engine API",
+    "RAG Engine API",
+    "Vertex AI Search API",
+    "Text embeddings API",
+    "Multimodal embeddings API",
+    "Vector Search API",
+    "Imagen API",
+    "Chirp (USM) API",
+    "Gen AI Evaluation SDK",
+    "Reasoning Engine",
+    "Model Garden",
+    "Context caching",
+    "Grounding with Google Search",
+    "Function calling",
+    "Code execution",
+    "Batch prediction"
+  ]
+}
