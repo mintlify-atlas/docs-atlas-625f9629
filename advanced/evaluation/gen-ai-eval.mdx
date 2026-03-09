@@ -1,0 +1,512 @@
+---
+title: Gen AI Evaluation SDK
+description: Use the Gen AI Evaluation Service SDK with predefined metrics for comprehensive model and agent evaluation
+---
+
+# Gen AI Evaluation Service SDK
+
+The Gen AI Evaluation Service SDK provides a modern, comprehensive framework for evaluating generative AI models and agents on Google Cloud.
+
+## Overview
+
+The Gen AI Evaluation SDK offers:
+
+- **Predefined metrics**: Ready-to-use evaluation criteria for common tasks
+- **Persistent evaluation runs**: Store and retrieve evaluation results
+- **Agent support**: Evaluate agentic systems with traces
+- **Visualization**: Rich reporting and comparison tools
+- **Cloud integration**: Seamless integration with Vertex AI
+
+## Installation
+
+Install the evaluation SDK:
+
+```bash
+pip install --upgrade google-cloud-aiplatform[evaluation]
+```
+
+## Getting Started
+
+### Initialize the Client
+
+```python
+import vertexai
+from vertexai import Client
+from google.genai import types as genai_types
+
+PROJECT_ID = "your-project-id"
+LOCATION = "us-central1"
+
+vertexai.init(project=PROJECT_ID, location=LOCATION)
+
+client = Client(
+    project=PROJECT_ID,
+    location=LOCATION,
+    http_options=genai_types.HttpOptions(api_version="v1beta1")
+)
+```
+
+### Prepare Your Dataset
+
+Create a dataset with prompts and optional references:
+
+```python
+import pandas as pd
+
+eval_dataset = pd.DataFrame({
+    "prompt": [
+        "Explain the theory of relativity",
+        "What causes seasons on Earth?",
+        "How does photosynthesis work?"
+    ],
+    "reference": [
+        "Einstein's theory describes spacetime and gravity",
+        "Seasons result from Earth's axial tilt",
+        "Plants convert light energy into chemical energy"
+    ]
+})
+```
+
+<Note>
+References are optional for model-based metrics but required for reference-based metrics like ROUGE and BLEU.
+</Note>
+
+## Predefined Metrics
+
+### Model-Based Metrics
+
+These metrics use AI models to assess response quality:
+
+<Tabs>
+  <Tab title="Quality Metrics">
+    **Coherence**
+    
+    Measures logical flow and consistency.
+    
+    ```python
+    types.RubricMetric.COHERENCE
+    ```
+    
+    **Fluency**
+    
+    Assesses natural language quality.
+    
+    ```python
+    types.RubricMetric.FLUENCY
+    ```
+    
+    **Text Quality**
+    
+    Overall writing quality assessment.
+    
+    ```python
+    types.RubricMetric.TEXT_QUALITY
+    ```
+  </Tab>
+  
+  <Tab title="Safety & Accuracy">
+    **Safety**
+    
+    Detects harmful or toxic content.
+    
+    ```python
+    types.RubricMetric.SAFETY
+    ```
+    
+    **Groundedness**
+    
+    Verifies responses align with provided context.
+    
+    ```python
+    types.RubricMetric.GROUNDEDNESS
+    ```
+    
+    **Hallucination**
+    
+    Identifies fabricated information.
+    
+    ```python
+    types.RubricMetric.HALLUCINATION
+    ```
+  </Tab>
+  
+  <Tab title="Task-Specific">
+    **Question Answering Quality**
+    
+    Evaluates QA responses.
+    
+    ```python
+    types.RubricMetric.QUESTION_ANSWERING_QUALITY
+    ```
+    
+    **Summarization Quality**
+    
+    Assesses summary quality.
+    
+    ```python
+    types.RubricMetric.SUMMARIZATION_QUALITY
+    ```
+    
+    **Instruction Following**
+    
+    Checks adherence to instructions.
+    
+    ```python
+    types.RubricMetric.INSTRUCTION_FOLLOWING
+    ```
+  </Tab>
+  
+  <Tab title="Agent Metrics">
+    **Tool Use Quality**
+    
+    Evaluates function calling correctness.
+    
+    ```python
+    types.RubricMetric.TOOL_USE_QUALITY
+    ```
+    
+    **Final Response Quality**
+    
+    Assesses agent's final answer quality.
+    
+    ```python
+    types.RubricMetric.FINAL_RESPONSE_QUALITY
+    ```
+  </Tab>
+</Tabs>
+
+### Reference-Based Metrics
+
+Compare outputs against golden references:
+
+```python
+# ROUGE - Recall-oriented overlap
+"rouge"
+
+# BLEU - Precision-oriented overlap  
+"bleu"
+
+# Exact Match - Binary exact comparison
+"exact_match"
+```
+
+## Evaluation Workflows
+
+### Basic Model Evaluation
+
+Evaluate model responses with predefined metrics:
+
+```python
+from vertexai.evaluation import EvalTask
+
+eval_task = EvalTask(
+    dataset=eval_dataset,
+    metrics=[
+        "coherence",
+        "fluency",
+        "safety",
+        "groundedness"
+    ],
+    experiment="model-quality-eval"
+)
+
+result = eval_task.evaluate()
+result.summary_metrics
+```
+
+### Bring-Your-Own-Response
+
+Evaluate pre-generated responses:
+
+```python
+eval_dataset_with_responses = pd.DataFrame({
+    "prompt": prompts,
+    "response": model_responses,
+    "reference": golden_answers
+})
+
+eval_task = EvalTask(
+    dataset=eval_dataset_with_responses,
+    metrics=["groundedness", "relevance", "bleu"],
+    experiment="byop-eval"
+)
+
+result = eval_task.evaluate()
+```
+
+### Persistent Evaluation Runs
+
+Create evaluation runs that persist in Vertex AI:
+
+```python
+evaluation_run = client.evals.create_evaluation_run(
+    dataset=dataset,
+    metrics=[
+        types.RubricMetric.COHERENCE,
+        types.RubricMetric.FLUENCY,
+        types.RubricMetric.SAFETY
+    ],
+    dest="gs://my-bucket/eval-results"
+)
+
+# Check status
+evaluation_run.show()
+```
+
+<Note>
+Persistent evaluation runs can be viewed in the Vertex AI console for long-term tracking and comparison.
+</Note>
+
+### Poll for Completion
+
+Wait for async evaluation to complete:
+
+```python
+import time
+
+completed_states = {"SUCCEEDED", "FAILED", "CANCELLED"}
+
+while evaluation_run.state not in completed_states:
+    evaluation_run.show()
+    evaluation_run = client.evals.get_evaluation_run(
+        name=evaluation_run.name
+    )
+    time.sleep(5)
+
+# Get detailed results
+evaluation_run = client.evals.get_evaluation_run(
+    name=evaluation_run.name,
+    include_evaluation_items=True
+)
+
+evaluation_run.show()
+```
+
+## RAG Evaluation
+
+Evaluate Retrieval-Augmented Generation systems:
+
+### Reference-Free RAG Eval
+
+```python
+questions = [
+    "Which part of the brain handles short-term memory?"
+]
+
+retrieved_contexts = [
+    "Short-term memory is supported by the frontal lobe..."
+]
+
+generated_answers = [
+    "The frontal lobe and parietal lobe handle short-term memory."
+]
+
+eval_dataset = pd.DataFrame({
+    "prompt": [
+        f"Answer: {q} Context: {c}" 
+        for q, c in zip(questions, retrieved_contexts)
+    ],
+    "response": generated_answers
+})
+
+eval_task = EvalTask(
+    dataset=eval_dataset,
+    metrics=[
+        "question_answering_quality",
+        "groundedness",
+        "relevance",
+        "safety"
+    ],
+    experiment="rag-eval"
+)
+
+result = eval_task.evaluate()
+```
+
+### Referenced RAG Eval
+
+Compare against golden answers:
+
+```python
+golden_answers = [
+    "The frontal lobe and parietal lobe"
+]
+
+eval_dataset = pd.DataFrame({
+    "prompt": prompts,
+    "response": generated_answers,
+    "reference": golden_answers
+})
+
+eval_task = EvalTask(
+    dataset=eval_dataset,
+    metrics=[
+        "question_answering_quality",
+        "groundedness",
+        "rouge",
+        "bleu",
+        "exact_match"
+    ],
+    experiment="rag-referenced-eval"
+)
+
+result = eval_task.evaluate()
+```
+
+## Custom Metrics
+
+Define custom evaluation criteria:
+
+```python
+from vertexai.evaluation import PointwiseMetric
+
+relevance_template = """
+You are an evaluator assessing relevance.
+
+## Criteria
+Relevance: The response directly addresses the instruction.
+
+## Rating Rubric
+5: Completely relevant
+4: Mostly relevant
+3: Somewhat relevant
+2: Somewhat irrelevant
+1: Irrelevant
+
+## Evaluation Steps
+STEP 1: Assess relevance
+STEP 2: Score based on rubric
+
+# Inputs
+## Prompt
+{prompt}
+
+## Response
+{response}
+"""
+
+relevance_metric = PointwiseMetric(
+    metric="relevance",
+    metric_prompt_template=relevance_template
+)
+
+eval_task = EvalTask(
+    dataset=eval_dataset,
+    metrics=[relevance_metric, "coherence"],
+    experiment="custom-metrics-eval"
+)
+
+result = eval_task.evaluate()
+```
+
+## Visualization
+
+### Display Results
+
+```python
+from vertexai.preview.evaluation import notebook_utils
+
+notebook_utils.display_eval_result(
+    title="Evaluation Results",
+    eval_result=result
+)
+```
+
+### Compare Models
+
+```python
+results = [
+    ("model-a", result_a),
+    ("model-b", result_b)
+]
+
+# Radar plot
+notebook_utils.display_radar_plot(
+    results,
+    metrics=["coherence", "fluency", "safety", "groundedness"]
+)
+
+# Bar plot
+notebook_utils.display_bar_plot(
+    results,
+    metrics=["rouge", "bleu"]
+)
+```
+
+### View Explanations
+
+Inspect detailed evaluation reasoning:
+
+```python
+# View explanation for specific instance
+notebook_utils.display_explanations(
+    result,
+    num=2  # Show 2nd instance
+)
+
+# Focus on specific metrics
+notebook_utils.display_explanations(
+    result,
+    metrics=["groundedness", "coherence"]
+)
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Choose appropriate metrics">
+    Select metrics that align with your evaluation goals. Use multiple metrics for comprehensive assessment.
+  </Step>
+  
+  <Step title="Use sufficient data">
+    Aim for at least 100 evaluation examples for statistically significant results.
+  </Step>
+  
+  <Step title="Set evaluation QPS">
+    Configure `evaluation_service_qps` parameter to balance speed and quota usage.
+    
+    ```python
+    result = eval_task.evaluate(evaluation_service_qps=5)
+    ```
+  </Step>
+  
+  <Step title="Organize experiments">
+    Use consistent experiment naming to track evaluations over time.
+  </Step>
+  
+  <Step title="Review explanations">
+    Examine individual explanations to understand metric behavior and validate results.
+  </Step>
+</Steps>
+
+## Quotas and Performance
+
+<Note>
+Evaluation consumes Vertex AI quotas. Consider increasing quotas for large-scale evaluation.
+
+Learn more: [Evaluation Quotas](https://cloud.google.com/vertex-ai/generative-ai/docs/quotas#eval-quotas)
+</Note>
+
+### Performance Tips
+
+- **Batch evaluation**: Evaluate multiple examples simultaneously
+- **QPS configuration**: Adjust queries-per-second based on quotas
+- **Async evaluation**: Use persistent runs for large datasets
+- **Metric selection**: Choose only necessary metrics to reduce costs
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Agent Evaluation" icon="robot" href="/advanced/evaluation/agent-evaluation">
+    Learn to evaluate agentic systems with tool use
+  </Card>
+  <Card title="Model Migration" icon="shuffle" href="/advanced/evaluation/model-migration">
+    Compare models for migration decisions
+  </Card>
+  <Card title="View Results in Console" icon="chart-bar" href="https://cloud.google.com/vertex-ai/generative-ai/docs/models/view-evaluation">
+    Access evaluation reports in Vertex AI
+  </Card>
+  <Card title="API Reference" icon="book" href="https://cloud.google.com/python/docs/reference/aiplatform/latest/vertexai.evaluation">
+    Explore the complete API documentation
+  </Card>
+</CardGroup>

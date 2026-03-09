@@ -1,0 +1,546 @@
+---
+title: 'Education'
+description: 'Create personalized learning experiences, tutoring systems, and educational content with Gemini'
+---
+
+## Overview
+
+Gemini's multimodal capabilities enable powerful educational applications—from personalized tutoring to automated grading and content generation. Process text, images, audio, and video to create engaging, adaptive learning experiences.
+
+## Key Capabilities
+
+<CardGroup cols={2}>
+  <Card title="Personalized Tutoring" icon="chalkboard-user">
+    Adaptive learning paths based on student performance
+  </Card>
+  <Card title="Content Generation" icon="book">
+    Create lessons, quizzes, and study materials automatically
+  </Card>
+  <Card title="Multimodal Learning" icon="photo-film">
+    Process diagrams, videos, and handwritten work
+  </Card>
+  <Card title="Assessment" icon="clipboard-check">
+    Automated grading and detailed feedback
+  </Card>
+  <Card title="Translation" icon="language">
+    Make content accessible in multiple languages
+  </Card>
+  <Card title="Accessibility" icon="universal-access">
+    Generate alt text, transcripts, and simplified explanations
+  </Card>
+</CardGroup>
+
+## Setup
+
+### Installation
+
+```bash
+pip install google-genai
+```
+
+### Initialize Client
+
+```python
+import os
+from google import genai
+from google.genai.types import GenerateContentConfig, Part
+from IPython.display import Markdown, Image, display
+
+PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT")
+LOCATION = "us-central1"
+
+client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+```
+
+### Helper Function
+
+```python
+def generate_content(
+    model_id: str,
+    contents: list | str,
+    temperature: float = 0.0,
+) -> str:
+    """Generate content with Gemini.
+    
+    Args:
+        model_id: Model identifier (e.g., 'gemini-2.0-flash')
+        contents: Prompt content (text, images, etc.)
+        temperature: Randomness (0.0 = deterministic)
+        
+    Returns:
+        Generated text response
+    """
+    response = client.models.generate_content(
+        model=model_id,
+        contents=contents,
+        config=GenerateContentConfig(temperature=temperature),
+    )
+    return response.text
+```
+
+## Educational Use Cases
+
+### Text Reasoning
+
+Solve complex problems with step-by-step explanations:
+
+```python
+prompt = """
+Explain photosynthesis to a 10-year-old student.
+Use simple language, analogies, and break it into clear steps.
+"""
+
+response = generate_content(
+    model_id="gemini-2.0-flash",
+    contents=prompt,
+)
+
+display(Markdown(response))
+```
+
+Output:
+
+```markdown
+# How Plants Make Their Food! 🌱
+
+Photosynthesis is like a plant's kitchen! Here's how it works:
+
+1. **Ingredients**: Plants need three things:
+   - Sunlight (energy)
+   - Water (from the soil)
+   - Carbon dioxide (from the air)
+
+2. **The Kitchen**: This happens in the leaves, in tiny parts called chloroplasts
+   (they're green!)
+
+3. **Cooking**: The plant uses sunlight to mix water and carbon dioxide together
+
+4. **The Food**: This creates sugar (glucose) that the plant uses for energy
+
+5. **Bonus**: Plants also make oxygen, which we breathe!
+
+Think of it like baking a cake: You need ingredients, heat, and a recipe to make
+something delicious. Plants do the same thing—just with sunlight!
+```
+
+### Mathematical Reasoning
+
+Solve and explain math problems:
+
+```python
+prompt = """
+A train travels 300 km in 4 hours. Another train travels 250 km in 3 hours.
+Which train is faster, and by how much?
+
+Provide:
+1. Step-by-step solution
+2. The answer
+3. How to check your work
+"""
+
+response = generate_content(
+    model_id="gemini-2.0-flash",
+    contents=prompt,
+)
+
+display(Markdown(response))
+```
+
+### Visual Learning
+
+Analyze diagrams, charts, and educational images:
+
+```python
+image_url = "gs://cloud-samples-data/generative-ai/image/geometry-diagram.png"
+
+prompt = """
+Look at this geometry diagram.
+Explain:
+1. What geometric shapes are shown?
+2. What properties do these shapes have?
+3. Create a practice problem using this diagram
+"""
+
+response = generate_content(
+    model_id="gemini-2.5-flash",
+    contents=[
+        prompt,
+        Part.from_uri(file_uri=image_url, mime_type="image/png"),
+    ],
+)
+
+display(Markdown(response))
+```
+
+### Multi-Image Comparison
+
+Compare and contrast visual concepts:
+
+```python
+image1 = "gs://samples/cell-diagram-plant.png"
+image2 = "gs://samples/cell-diagram-animal.png"
+
+prompt = """
+Compare these plant and animal cell diagrams.
+
+Create a comparison table with:
+- Shared structures
+- Unique structures
+- Key differences
+- Functions of each unique part
+"""
+
+response = generate_content(
+    model_id="gemini-2.5-flash",
+    contents=[
+        "Image 1 (Plant Cell):",
+        Part.from_uri(file_uri=image1, mime_type="image/png"),
+        "Image 2 (Animal Cell):",
+        Part.from_uri(file_uri=image2, mime_type="image/png"),
+        prompt,
+    ],
+)
+
+display(Markdown(response))
+```
+
+### Video Analysis
+
+Extract learning points from educational videos:
+
+```python
+video_url = "gs://cloud-samples-data/video/science-experiment.mp4"
+
+prompt = """
+Analyze this science experiment video.
+
+Provide:
+1. Summary of the experiment
+2. Materials used
+3. Step-by-step procedure
+4. Scientific principles demonstrated
+5. Safety considerations
+6. Discussion questions for students
+"""
+
+response = generate_content(
+    model_id="gemini-2.5-flash",
+    contents=[
+        Part.from_uri(file_uri=video_url, mime_type="video/mp4"),
+        prompt,
+    ],
+)
+
+display(Markdown(response))
+```
+
+## Personalized Learning
+
+### Adaptive Difficulty
+
+```python
+from pydantic import BaseModel
+
+class StudentAssessment(BaseModel):
+    current_level: str  # "beginner", "intermediate", "advanced"
+    strengths: list[str]
+    areas_for_improvement: list[str]
+    recommended_topics: list[str]
+    next_lesson_difficulty: str
+
+student_work = """
+Student solved 8/10 basic algebra problems correctly.
+Struggled with word problems requiring multi-step solutions.
+Excelled at simplifying expressions and solving for x.
+"""
+
+response = client.models.generate_content(
+    model="gemini-2.0-flash",
+    contents=f"Assess this student's performance: {student_work}",
+    config=GenerateContentConfig(
+        response_schema=StudentAssessment,
+        response_mime_type="application/json",
+    ),
+)
+
+assessment = response.parsed
+print(f"Level: {assessment.current_level}")
+print(f"Strengths: {', '.join(assessment.strengths)}")
+print(f"Next: {assessment.next_lesson_difficulty} lessons on {assessment.recommended_topics[0]}")
+```
+
+### Generate Practice Problems
+
+```python
+def generate_practice_problems(
+    topic: str,
+    difficulty: str,
+    num_problems: int,
+) -> str:
+    """Generate customized practice problems."""
+    prompt = f"""
+Generate {num_problems} {difficulty} practice problems on {topic}.
+
+For each problem:
+1. State the problem clearly
+2. Provide hints
+3. Include the solution with explanation
+
+Format as Markdown with sections.
+    """
+    
+    response = generate_content(
+        model_id="gemini-2.0-flash",
+        contents=prompt,
+        temperature=0.7,  # Some creativity for varied problems
+    )
+    
+    return response
+
+# Usage
+problems = generate_practice_problems(
+    topic="quadratic equations",
+    difficulty="intermediate",
+    num_problems=5,
+)
+
+display(Markdown(problems))
+```
+
+## Assessment and Grading
+
+### Automated Essay Grading
+
+```python
+class EssayGrade(BaseModel):
+    score: int  # 0-100
+    thesis_clarity: int  # 1-5
+    argument_strength: int  # 1-5
+    organization: int  # 1-5
+    grammar_mechanics: int  # 1-5
+    strengths: list[str]
+    areas_for_improvement: list[str]
+    specific_feedback: str
+    suggested_revisions: list[str]
+
+student_essay = """
+Climate change is one of the most pressing issues of our time...
+[Student's essay text]
+"""
+
+rubric = """
+Grading criteria:
+- Clear thesis statement (20%)
+- Strong supporting arguments with evidence (30%)
+- Logical organization and flow (20%)
+- Grammar, spelling, and mechanics (15%)
+- Proper citations and research (15%)
+"""
+
+response = client.models.generate_content(
+    model="gemini-2.5-pro",
+    contents=f"Grade this essay using the rubric.\n\nRubric:\n{rubric}\n\nEssay:\n{student_essay}",
+    config=GenerateContentConfig(
+        response_schema=EssayGrade,
+        response_mime_type="application/json",
+    ),
+)
+
+grade = response.parsed
+print(f"Score: {grade.score}/100")
+print(f"\nStrengths:")
+for strength in grade.strengths:
+    print(f"  - {strength}")
+print(f"\nAreas for Improvement:")
+for area in grade.areas_for_improvement:
+    print(f"  - {area}")
+```
+
+### Handwritten Work Recognition
+
+```python
+# Student submits photo of handwritten math work
+handwritten_work = "gs://samples/student-math-homework.jpg"
+
+prompt = """
+Analyze this handwritten math work.
+
+Check:
+1. Is the solution correct?
+2. Are the steps shown clearly?
+3. Are there any errors in calculation or logic?
+4. Provide specific feedback on where mistakes occurred
+5. Show the correct solution if needed
+"""
+
+response = generate_content(
+    model_id="gemini-2.5-flash",
+    contents=[
+        Part.from_uri(file_uri=handwritten_work, mime_type="image/jpeg"),
+        prompt,
+    ],
+)
+
+display(Markdown(response))
+```
+
+## Content Generation
+
+### Create Lesson Plans
+
+```python
+lesson_plan_schema = {
+    "type": "OBJECT",
+    "properties": {
+        "title": {"type": "STRING"},
+        "grade_level": {"type": "STRING"},
+        "duration": {"type": "STRING"},
+        "learning_objectives": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "materials": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "activities": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "assessment": {"type": "STRING"},
+        "homework": {"type": "STRING"},
+    },
+}
+
+response = client.models.generate_content(
+    model="gemini-2.0-flash",
+    contents="Create a lesson plan for teaching photosynthesis to 6th graders",
+    config=GenerateContentConfig(
+        response_schema=lesson_plan_schema,
+        response_mime_type="application/json",
+    ),
+)
+
+lesson = response.parsed
+print(f"Lesson: {lesson['title']}")
+print(f"Duration: {lesson['duration']}")
+print(f"\nObjectives:")
+for obj in lesson['learning_objectives']:
+    print(f"  - {obj}")
+```
+
+### Generate Quiz Questions
+
+```python
+def generate_quiz(topic: str, num_questions: int, question_types: list[str]):
+    prompt = f"""
+Create a quiz on {topic} with {num_questions} questions.
+
+Include these question types: {', '.join(question_types)}
+
+For each question:
+- Provide the question
+- Provide multiple choice options (if applicable)
+- Include the correct answer
+- Add an explanation
+
+Format as JSON.
+    """
+    
+    response = client.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=prompt,
+        config=GenerateContentConfig(
+            response_mime_type="application/json",
+            temperature=0.7,
+        ),
+    )
+    
+    return response.parsed
+
+# Generate mixed quiz
+quiz = generate_quiz(
+    topic="American Revolution",
+    num_questions=10,
+    question_types=["multiple choice", "true/false", "short answer"],
+)
+```
+
+## Accessibility Features
+
+### Generate Alt Text
+
+```python
+diagram_url = "gs://samples/complex-diagram.png"
+
+prompt = """
+Generate comprehensive alt text for this educational image.
+
+Include:
+1. Brief description (for screen readers)
+2. Detailed description (for study notes)
+3. Key information that sighted students would extract
+"""
+
+response = generate_content(
+    model_id="gemini-2.5-flash",
+    contents=[
+        Part.from_uri(file_uri=diagram_url, mime_type="image/png"),
+        prompt,
+    ],
+)
+
+print(response)
+```
+
+### Simplify Complex Text
+
+```python
+complex_text = """
+The mitochondrion is a double-membrane-bound organelle found in most 
+eukaryotic organisms. Mitochondria generate most of the cell's supply 
+of adenosine triphosphate, used as a source of chemical energy.
+"""
+
+prompt = f"""
+Simplify this text for students with different reading levels.
+
+Provide 3 versions:
+1. Elementary (grades 3-5)
+2. Middle school (grades 6-8)  
+3. High school (grades 9-12)
+
+Text: {complex_text}
+"""
+
+response = generate_content(
+    model_id="gemini-2.0-flash",
+    contents=prompt,
+)
+
+display(Markdown(response))
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Provide Clear Context">
+    Include grade level, prior knowledge, and learning objectives
+  </Step>
+  <Step title="Use Multimodal Inputs">
+    Combine text, images, and videos for richer understanding
+  </Step>
+  <Step title="Validate Generated Content">
+    Review AI-generated educational materials for accuracy
+  </Step>
+  <Step title="Personalize Learning Paths">
+    Use student performance data to adapt content difficulty
+  </Step>
+  <Step title="Maintain Human Oversight">
+    Have educators review assessments and feedback
+  </Step>
+  <Step title="Ensure Accessibility">
+    Generate multiple formats for diverse learning needs
+  </Step>
+</Steps>
+
+## Related Resources
+
+- [Multimodal Capabilities](/features/multimodal)
+- [Structured Output](/features/structured-output)
+- [Long Context Window](/features/context-window)
+
+<Note>
+AI-generated educational content should always be reviewed by qualified educators before use with students.
+</Note>

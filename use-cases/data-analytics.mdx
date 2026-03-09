@@ -1,0 +1,469 @@
+---
+title: 'Data Analytics'
+description: 'Generate SQL queries, extract insights, and automate data analysis with BigQuery and Gemini'
+---
+
+## Overview
+
+Gemini integrates directly with BigQuery through generative AI functions, enabling you to perform sophisticated data analysis using natural language. Query your data, generate insights, forecast trends, and extract structured information—all within familiar SQL.
+
+## Key Capabilities
+
+<CardGroup cols={2}>
+  <Card title="SQL Generation" icon="database">
+    Convert natural language to SQL queries
+  </Card>
+  <Card title="Text Analysis" icon="text">
+    Classify, summarize, and extract entities from text columns
+  </Card>
+  <Card title="Data Insights" icon="lightbulb">
+    Generate explanations and insights from query results
+  </Card>
+  <Card title="Time Series Forecasting" icon="chart-line">
+    Predict future trends with AI.FORECAST
+  </Card>
+  <Card title="Structured Extraction" icon="table">
+    Parse unstructured text into tables
+  </Card>
+  <Card title="Sentiment Analysis" icon="face-smile">
+    Analyze customer feedback and reviews
+  </Card>
+</CardGroup>
+
+## Setup
+
+### Prerequisites
+
+1. [Enable BigQuery API](https://console.cloud.google.com/flows/enableapi?apiid=bigquery.googleapis.com,bigqueryconnection.googleapis.com,aiplatform.googleapis.com)
+2. Create a Cloud resource connection:
+
+```bash
+bq mk --connection --location=us \
+    --connection_type=CLOUD_RESOURCE genai_connection
+```
+
+3. Grant permissions to the service account:
+
+```bash
+# Get service account
+SERVICE_ACCOUNT=$(bq show --connection --location=us genai_connection \
+    --format=json | jq -r '.cloudResource.serviceAccountId')
+
+# Grant Vertex AI User role
+gcloud projects add-iam-policy-binding PROJECT_ID \
+    --member="serviceAccount:${SERVICE_ACCOUNT}" \
+    --role="roles/aiplatform.user"
+```
+
+## BigQuery AI Functions
+
+### AI.GENERATE_TEXT
+
+Generate natural language text from data:
+
+```sql
+SELECT
+  product_name,
+  AI.GENERATE_TEXT(
+    MODEL `project.dataset.gemini_model`,
+    CONCAT(
+      'Write a compelling product description for: ',
+      product_name,
+      '. Features: ',
+      features
+    ),
+    STRUCT(
+      0.7 AS temperature,
+      100 AS max_output_tokens
+    )
+  ) AS product_description
+FROM
+  `project.dataset.products`
+LIMIT 10;
+```
+
+### AI.GENERATE (with structured output)
+
+Extract structured data from unstructured text:
+
+```sql
+DECLARE EXTRACTION_SCHEMA JSON DEFAULT '''
+{
+  "type": "OBJECT",
+  "properties": {
+    "product": {"type": "STRING"},
+    "rating": {"type": "INTEGER"},
+    "sentiment": {"type": "STRING"},
+    "issue": {"type": "STRING"}
+  }
+}''';
+
+SELECT
+  review_id,
+  AI.GENERATE(
+    MODEL `project.dataset.gemini_model`,
+    CONCAT(
+      'Extract structured information from this review: ',
+      review_text
+    ),
+    STRUCT(
+      EXTRACTION_SCHEMA AS response_schema,
+      'application/json' AS response_mime_type
+    )
+  ) AS extracted_data
+FROM
+  `project.dataset.customer_reviews`
+LIMIT 100;
+```
+
+### AI.GENERATE_TABLE
+
+Generate entire tables from prompts:
+
+```sql
+SELECT *
+FROM
+  AI.GENERATE_TABLE(
+    MODEL `project.dataset.gemini_model`,
+    TABLE `project.dataset.sales_data`,
+    STRUCT(
+      '''Analyze these sales transactions and create a summary table 
+      with columns: category, total_sales, avg_order_value, 
+      top_product, growth_rate''' AS prompt,
+      0.2 AS temperature
+    )
+  );
+```
+
+## Scalar AI Functions
+
+Use scalar functions for row-level analysis:
+
+### AI.GENERATE_BOOL
+
+Classify or validate data:
+
+```sql
+SELECT
+  email,
+  AI.GENERATE_BOOL(
+    MODEL `project.dataset.gemini_model`,
+    CONCAT('Is this a valid business email? ', email)
+  ) AS is_business_email
+FROM
+  `project.dataset.contacts`;
+```
+
+### AI.GENERATE_INT / AI.GENERATE_DOUBLE
+
+Extract numeric values:
+
+```sql
+SELECT
+  review_text,
+  AI.GENERATE_INT(
+    MODEL `project.dataset.gemini_model`,
+    CONCAT('Rate this review from 1-5 stars: ', review_text)
+  ) AS star_rating,
+  AI.GENERATE_DOUBLE(
+    MODEL `project.dataset.gemini_model`,
+    CONCAT('Estimate purchase likelihood 0-1: ', review_text)
+  ) AS purchase_probability
+FROM
+  `project.dataset.reviews`;
+```
+
+## Time Series Forecasting
+
+### AI.FORECAST
+
+Predict future values:
+
+```sql
+-- Create forecasting model
+CREATE OR REPLACE MODEL `project.dataset.sales_forecast`
+REMOTE WITH CONNECTION `us.genai_connection`
+OPTIONS (
+  REMOTE_SERVICE_TYPE = 'CLOUD_AI_TIME_SERIES_V1'
+);
+
+-- Generate forecast
+SELECT
+  *
+FROM
+  AI.FORECAST(
+    MODEL `project.dataset.sales_forecast`,
+    STRUCT(
+      30 AS horizon,  -- Forecast 30 days
+      0.95 AS confidence_level
+    ),
+    TABLE `project.dataset.daily_sales`
+  );
+```
+
+## Real-World Examples
+
+### Customer Sentiment Analysis
+
+```sql
+-- Analyze customer feedback sentiment
+WITH sentiment_analysis AS (
+  SELECT
+    feedback_id,
+    customer_id,
+    feedback_text,
+    AI.GENERATE(
+      MODEL `project.dataset.gemini_model`,
+      CONCAT('Analyze sentiment and extract key topics: ', feedback_text),
+      STRUCT(
+        JSON'''
+        {
+          "type": "OBJECT",
+          "properties": {
+            "sentiment": {"type": "STRING", "enum": ["positive", "negative", "neutral"]},
+            "confidence": {"type": "NUMBER"},
+            "topics": {"type": "ARRAY", "items": {"type": "STRING"}},
+            "urgency": {"type": "STRING", "enum": ["low", "medium", "high"]}
+          }
+        }''' AS response_schema,
+        'application/json' AS response_mime_type
+      )
+    ) AS analysis
+  FROM
+    `project.dataset.customer_feedback`
+)
+SELECT
+  JSON_VALUE(analysis.sentiment) AS sentiment,
+  CAST(JSON_VALUE(analysis.confidence) AS FLOAT64) AS confidence,
+  JSON_VALUE(analysis.urgency) AS urgency,
+  COUNT(*) AS feedback_count
+FROM
+  sentiment_analysis
+GROUP BY
+  sentiment, confidence, urgency
+ORDER BY
+  feedback_count DESC;
+```
+
+### Product Categorization
+
+```sql
+-- Auto-categorize products from descriptions
+CREATE OR REPLACE TABLE `project.dataset.categorized_products` AS
+SELECT
+  product_id,
+  product_name,
+  description,
+  AI.GENERATE(
+    MODEL `project.dataset.gemini_model`,
+    CONCAT(
+      'Categorize this product. Name: ',
+      product_name,
+      '. Description: ',
+      description
+    ),
+    STRUCT(
+      JSON'''
+      {
+        "type": "OBJECT",
+        "properties": {
+          "category": {"type": "STRING"},
+          "subcategory": {"type": "STRING"},
+          "tags": {"type": "ARRAY", "items": {"type": "STRING"}},
+          "target_audience": {"type": "STRING"}
+        }
+      }''' AS response_schema,
+      'application/json' AS response_mime_type
+    )
+  ) AS category_info
+FROM
+  `project.dataset.products`;
+```
+
+### SQL Query Generation
+
+Use Python to convert natural language to SQL:
+
+```python
+from google import genai
+from google.genai.types import GenerateContentConfig
+
+client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+
+table_schema = """
+Tables:
+- sales (date, product_id, amount, quantity, region)
+- products (product_id, name, category, price)
+- customers (customer_id, name, region, signup_date)
+"""
+
+user_question = "What were the top 5 products by revenue in California last month?"
+
+prompt = f"""
+Generate a BigQuery SQL query to answer this question:
+{user_question}
+
+Schema:
+{table_schema}
+
+Rules:
+- Use Standard SQL syntax
+- Include table aliases
+- Add comments
+- Format for readability
+"""
+
+response = client.models.generate_content(
+    model="gemini-2.0-flash",
+    contents=prompt,
+    config=GenerateContentConfig(temperature=0),
+)
+
+print(response.text)
+```
+
+Output:
+
+```sql
+-- Top 5 products by revenue in California last month
+SELECT
+  p.product_id,
+  p.name AS product_name,
+  p.category,
+  SUM(s.amount) AS total_revenue,
+  SUM(s.quantity) AS units_sold
+FROM
+  `project.dataset.sales` AS s
+INNER JOIN
+  `project.dataset.products` AS p
+  ON s.product_id = p.product_id
+WHERE
+  s.region = 'California'
+  AND s.date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH)
+  AND s.date < DATE_TRUNC(CURRENT_DATE(), MONTH)
+GROUP BY
+  p.product_id,
+  p.name,
+  p.category
+ORDER BY
+  total_revenue DESC
+LIMIT 5;
+```
+
+## Data Enrichment Pipeline
+
+```sql
+-- Enrich customer data with AI-generated insights
+CREATE OR REPLACE TABLE `project.dataset.enriched_customers` AS
+WITH customer_activity AS (
+  SELECT
+    c.customer_id,
+    c.name,
+    COUNT(DISTINCT o.order_id) AS total_orders,
+    SUM(o.amount) AS lifetime_value,
+    STRING_AGG(DISTINCT p.category) AS purchased_categories
+  FROM
+    `project.dataset.customers` c
+  LEFT JOIN
+    `project.dataset.orders` o ON c.customer_id = o.customer_id
+  LEFT JOIN
+    `project.dataset.products` p ON o.product_id = p.product_id
+  GROUP BY
+    c.customer_id, c.name
+)
+SELECT
+  customer_id,
+  name,
+  total_orders,
+  lifetime_value,
+  AI.GENERATE(
+    MODEL `project.dataset.gemini_model`,
+    CONCAT(
+      'Create a customer profile and recommendations. ',
+      'Orders: ', CAST(total_orders AS STRING), ', ',
+      'LTV: $', CAST(lifetime_value AS STRING), ', ',
+      'Categories: ', purchased_categories
+    ),
+    STRUCT(
+      JSON'''
+      {
+        "type": "OBJECT",
+        "properties": {
+          "segment": {"type": "STRING"},
+          "churn_risk": {"type": "STRING"},
+          "recommendations": {"type": "ARRAY", "items": {"type": "STRING"}},
+          "next_best_action": {"type": "STRING"}
+        }
+      }''' AS response_schema,
+      'application/json' AS response_mime_type
+    )
+  ) AS customer_insights
+FROM
+  customer_activity;
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Use Remote Models Efficiently">
+    Create BigQuery models once and reuse them across queries
+  </Step>
+  <Step title="Optimize Token Usage">
+    Be concise with prompts; only include necessary context
+  </Step>
+  <Step title="Leverage Structured Output">
+    Use JSON schemas for reliable data extraction
+  </Step>
+  <Step title="Monitor Costs">
+    Track API usage with BigQuery audit logs
+  </Step>
+  <Step title="Cache Results">
+    Store frequently-used AI-generated data in tables
+  </Step>
+  <Step title="Validate AI Output">
+    Implement data quality checks on generated results
+  </Step>
+</Steps>
+
+## Performance Tips
+
+```sql
+-- Batch process for better performance
+CREATE OR REPLACE TABLE `project.dataset.processed_data` AS
+SELECT
+  *,
+  AI.GENERATE_TEXT(
+    MODEL `project.dataset.gemini_model`,
+    prompt,
+    STRUCT(0.2 AS temperature, 100 AS max_output_tokens)
+  ) AS generated_text
+FROM (
+  -- Pre-filter and prepare data
+  SELECT
+    id,
+    CONCAT('Summarize: ', SUBSTR(text, 1, 500)) AS prompt
+  FROM
+    `project.dataset.large_table`
+  WHERE
+    text IS NOT NULL
+    AND LENGTH(text) > 100
+);
+
+-- Use incremental processing for large datasets
+MERGE `project.dataset.processed_data` T
+USING (
+  SELECT * FROM `project.dataset.new_records`
+) S
+ON T.id = S.id
+WHEN NOT MATCHED THEN INSERT ROW;
+```
+
+## Related Resources
+
+- [BigQuery ML Documentation](https://cloud.google.com/bigquery/docs/bqml-introduction)
+- [Gemini in BigQuery](https://cloud.google.com/bigquery/docs/generative-ai-overview)
+- [BigQuery Remote Models](https://cloud.google.com/bigquery/docs/remote-models)
+
+<Note>
+AI functions in BigQuery incur costs based on token usage. Monitor your spending in the Cloud Console.
+</Note>

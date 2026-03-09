@@ -1,0 +1,226 @@
+---
+title: "Embeddings & Vector Search Overview"
+description: "Learn about text and multimodal embeddings, vector search, and how to build intelligent search and recommendation systems on Google Cloud"
+---
+
+## Introduction
+
+Embeddings are a powerful way to represent data as dense vectors that capture semantic meaning. With the rise of Large Language Models (LLMs), embeddings have become essential for building intelligent applications that understand the meaning and context of text, images, and videos.
+
+## What are Embeddings?
+
+In traditional IT systems, most data is organized as structured or tabular data, using simple keywords, labels, and categories in databases and search engines. In contrast, AI-powered services arrange data into a simple data structure known as "embeddings."
+
+<Note>
+Embeddings are vector representations that capture the semantic meaning of content. Similar content has embeddings that are close together in the embedding space.
+</Note>
+
+Once trained with specific content like text, images, or videos, AI creates a space called "embedding space", which is essentially a map of the content's meaning. AI can identify the location of each content on the map - that's what an embedding is.
+
+### How Embeddings Work
+
+Let's take an example where a text discusses movies, music, and actors, with a distribution of 10%, 2%, and 30%, respectively. The AI can create an embedding with three values: 0.1, 0.02, and 0.3, in 3-dimensional space.
+
+AI can put content with similar meanings closely together in the space. This is how Google organizes data across various services like Google Search, YouTube, and Play to provide search results and recommendations with relevant content.
+
+## Use Cases
+
+Embeddings can be used to represent different types of business data:
+
+<CardGroup cols={2}>
+  <Card title="Semantic Search" icon="magnifying-glass">
+    Find content based on meaning rather than just keywords. Enable natural language queries to find relevant documents, products, or media.
+  </Card>
+  
+  <Card title="Recommendations" icon="star">
+    Build recommendation systems that understand user preferences and content similarity to suggest relevant items.
+  </Card>
+  
+  <Card title="Classification" icon="tags">
+    Classify texts with semantic understanding for use cases like customer segmentation and content categorization.
+  </Card>
+  
+  <Card title="Question Answering" icon="messages-question">
+    Ground LLM outputs with relevant business data through Retrieval-Augmented Generation (RAG).
+  </Card>
+</CardGroup>
+
+## Embedding Models on Vertex AI
+
+Vertex AI provides several embedding models for different use cases:
+
+### Text Embeddings
+
+<Steps>
+  <Step title="text-embedding-005">
+    Latest model with 768 dimensions, supporting task types for optimized retrieval, classification, and clustering.
+  </Step>
+  
+  <Step title="text-multilingual-embedding-002">
+    Multilingual support for global applications across 100+ languages.
+  </Step>
+  
+  <Step title="Custom Tuned Models">
+    Fine-tune embedding models on your domain-specific data for improved performance.
+  </Step>
+</Steps>
+
+### Multimodal Embeddings
+
+The `multimodalembedding` model generates embeddings for:
+- **Text**: Contextual text understanding
+- **Images**: Visual content representation  
+- **Video**: Temporal video segment embeddings
+
+All modalities share the same embedding space, enabling cross-modal search (e.g., find images using text queries).
+
+## Vector Search
+
+Once you have embeddings, you need a fast way to find similar items. **Vertex AI Vector Search** (formerly Matching Engine) provides:
+
+- **Blazingly fast**: Millisecond-level search across billions of vectors
+- **ScaNN algorithm**: Google's state-of-the-art Approximate Nearest Neighbor (ANN) algorithm
+- **Fully managed**: No infrastructure management required
+- **Hybrid search**: Combine semantic and keyword-based search
+- **Autoscaling**: Automatically resize based on workload demands
+
+### How Vector Search Works
+
+Vector Search uses Approximate Nearest Neighbor (ANN) techniques to quickly find similar embeddings:
+
+1. **Indexing**: Organize embeddings into an efficient tree structure
+2. **Querying**: Find nearest neighbors in milliseconds
+3. **Ranking**: Return top-k most similar items
+
+```python
+from google.cloud import aiplatform
+
+# Initialize Vertex AI
+aiplatform.init(project=PROJECT_ID, location=LOCATION)
+
+# Create an index
+my_index = aiplatform.MatchingEngineIndex.create_tree_ah_index(
+    display_name="my-index",
+    contents_delta_uri="gs://my-bucket/embeddings/",
+    dimensions=768,
+    approximate_neighbors_count=10,
+    distance_measure_type="DOT_PRODUCT_DISTANCE",
+)
+```
+
+## Key Concepts
+
+### Embedding Dimensions
+
+Vertex AI embedding models support various dimensions:
+- **128, 256, 512**: Smaller dimensions for faster processing
+- **768**: Default for text-embedding-005
+- **1408**: Maximum for multimodal embeddings
+
+### Distance Metrics
+
+<Tabs>
+  <Tab title="Dot Product">
+    Used by Vertex AI text embedding models. Higher values indicate more similarity.
+    ```python
+    similarity = np.dot(embedding1, embedding2)
+    ```
+  </Tab>
+  
+  <Tab title="Cosine Similarity">
+    Measures the cosine of the angle between vectors. Values range from -1 to 1.
+    ```python
+    from sklearn.metrics.pairwise import cosine_similarity
+    similarity = cosine_similarity([embedding1], [embedding2])
+    ```
+  </Tab>
+  
+  <Tab title="Euclidean Distance">
+    Measures straight-line distance. Lower values indicate more similarity.
+    ```python
+    distance = np.linalg.norm(embedding1 - embedding2)
+    ```
+  </Tab>
+</Tabs>
+
+## Architecture Patterns
+
+### RAG (Retrieval-Augmented Generation)
+
+<Steps>
+  <Step title="Generate Embeddings">
+    Convert documents into embeddings and store in Vector Search
+  </Step>
+  
+  <Step title="Query Processing">
+    Convert user query into an embedding
+  </Step>
+  
+  <Step title="Retrieval">
+    Find relevant documents using vector similarity
+  </Step>
+  
+  <Step title="Generation">
+    Pass retrieved context to LLM for grounded response generation
+  </Step>
+</Steps>
+
+### Semantic Search
+
+```python
+from google import genai
+
+# Initialize client
+client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+
+# Generate query embedding
+query = "How to implement authentication?"
+query_embedding = client.models.embed_content(
+    model="text-embedding-005",
+    contents=[query]
+).embeddings[0].values
+
+# Search vector index
+response = index_endpoint.find_neighbors(
+    deployed_index_id=DEPLOYED_INDEX_ID,
+    queries=[query_embedding],
+    num_neighbors=10
+)
+```
+
+## Getting Started
+
+Ready to build with embeddings and vector search? Explore these topics:
+
+<CardGroup cols={2}>
+  <Card title="Text Embeddings" href="./text-embeddings">
+    Learn how to generate and use text embeddings with task types
+  </Card>
+  
+  <Card title="Multimodal Embeddings" href="./multimodal-embeddings">
+    Work with image and video embeddings
+  </Card>
+  
+  <Card title="Vector Search" href="./vector-search">
+    Set up and query Vector Search indexes
+  </Card>
+  
+  <Card title="Hybrid Search" href="./hybrid-search">
+    Combine semantic and keyword search for better results
+  </Card>
+</CardGroup>
+
+## Pricing
+
+Vertex AI Embeddings and Vector Search have separate pricing:
+
+- **Embeddings API**: Charged per 1,000 characters of input text
+- **Vector Search**: Charged based on node hours and queries
+
+See the [Vertex AI Pricing](https://cloud.google.com/vertex-ai/pricing) page for detailed information.
+
+## Next Steps
+
+- [Generate your first text embeddings](/embeddings/text-embeddings)
+- [Set up Vector Search](/embeddings/vector-search)
+- [Explore multimodal capabilities](/embeddings/multimodal-embeddings)

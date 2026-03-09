@@ -1,0 +1,621 @@
+---
+title: "Hybrid Search"
+description: "Combine semantic search and keyword search with Vertex AI Vector Search for superior retrieval quality"
+---
+
+## Overview
+
+Hybrid search combines **semantic search** (using dense embeddings) with **keyword search** (using sparse embeddings) to achieve higher search quality than either approach alone. This is the same architecture pattern used by Google Search since 2015.
+
+<Note>
+Hybrid search is especially valuable for queries containing:
+- Product SKUs or model numbers
+- Brand names not in training data
+- Technical jargon or acronyms
+- Domain-specific terminology
+</Note>
+
+## Why Hybrid Search?
+
+Semantic search alone has limitations:
+
+**Out-of-Domain Data**: Embeddings models can't understand arbitrary product numbers, new brand names, or proprietary codenames that weren't in their training data.
+
+**Example**: A query for "SKU-12345" won't work well with semantic search because the embedding model doesn't understand the significance of that specific product code.
+
+### Semantic vs. Keyword Search
+
+<Tabs>
+  <Tab title="Semantic Search">
+    **Strengths:**
+    - Understands meaning and intent
+    - Handles synonyms and paraphrasing
+    - Cross-lingual capability
+    
+    **Weaknesses:**
+    - Struggles with exact matches (SKUs, IDs)
+    - Out-of-domain terminology
+    - New/unknown entities
+  </Tab>
+  
+  <Tab title="Keyword Search">
+    **Strengths:**
+    - Exact term matching
+    - Works with unknown terms
+    - Predictable behavior
+    
+    **Weaknesses:**
+    - No semantic understanding
+    - Can't handle synonyms
+    - Language-dependent
+  </Tab>
+  
+  <Tab title="Hybrid (Best of Both)">
+    **Combines:**
+    - Semantic understanding
+    - Exact term matching
+    - Robustness to out-of-domain data
+    - Higher overall search quality
+  </Tab>
+</Tabs>
+
+## How It Works
+
+Hybrid search uses:
+
+1. **Dense Embeddings**: Capture semantic meaning (768 dimensions, all non-zero)
+2. **Sparse Embeddings**: Represent keyword frequencies (10,000+ dimensions, mostly zeros)
+3. **RRF Ranking**: Merge results using Reciprocal Rank Fusion
+
+## Sparse Embeddings
+
+Sparse embeddings are vectors where most values are zero, representing keyword distributions in text.
+
+### TF-IDF Vectorization
+
+The most common sparse embedding algorithm:
+
+```python
+from sklearn.feature_extraction.text import TfidfVectorizer
+import pandas as pd
+
+# Sample product catalog
+products = pd.DataFrame({
+    'title': [
+        'Google Sticker',
+        'Google Cloud Sticker',
+        'Android Black Pen',
+        'Chrome Dino Pin'
+    ]
+})
+
+# Initialize vectorizer
+vectorizer = TfidfVectorizer()
+vectorizer.fit_transform(products['title'])
+
+# Generate sparse embedding for new text
+def get_sparse_embedding(text):
+    tfidf_vector = vectorizer.transform([text])
+    
+    values = []
+    dims = []
+    for i, tfidf_value in enumerate(tfidf_vector.data):
+        values.append(float(tfidf_value))
+        dims.append(int(tfidf_vector.indices[i]))
+    
+    return {"values": values, "dimensions": dims}
+
+# Test
+result = get_sparse_embedding("Chrome Dino Pin")
+print(result)
+# {'values': [0.676, 0.521, 0.521], 'dimensions': [157, 48, 33]}
+```
+
+### Data Format
+
+Sparse embeddings for Vector Search use this format:
+
+```json
+{"id": "1", "sparse_embedding": {"values": [0.1, 0.2], "dimensions": [1, 4]}}
+{"id": "2", "sparse_embedding": {"values": [-0.4, 0.2, -1.3], "dimensions": [10, 20, 30]}}
+```
+
+## Token-Based Search
+
+Create an index with sparse embeddings only:
+
+<Steps>
+  <Step title="Prepare Data">
+    ```python
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    import pandas as pd
+    
+    # Load catalog
+    df = pd.read_csv("products.csv")
+    
+    # Train vectorizer
+    vectorizer = TfidfVectorizer()
+    vectorizer.fit_transform(df['title'])
+    
+    # Generate sparse embeddings
+    items = []
+    for i, row in df.iterrows():
+        sparse_emb = get_sparse_embedding(row['title'])
+        items.append({
+            "id": i,
+            "title": row['title'],
+            "sparse_embedding": sparse_emb
+        })
+    ```
+  </Step>
+  
+  <Step title="Upload to Cloud Storage">
+    ```python
+    import json
+    
+    # Save as JSONL
+    with open("sparse_embeddings.json", "w") as f:
+        for item in items:
+            f.write(json.dumps(item) + "\n")
+    
+    # Upload
+    ! gsutil mb -l us-central1 gs://your-bucket
+    ! gsutil cp sparse_embeddings.json gs://your-bucket/
+    ```
+  </Step>
+  
+  <Step title="Create Index">
+    ```python
+    from google.cloud import aiplatform
+    
+    aiplatform.init(project=PROJECT_ID, location=LOCATION)
+    
+    sparse_index = aiplatform.MatchingEngineIndex.create_tree_ah_index(
+        display_name="sparse-index",
+        contents_delta_uri="gs://your-bucket/",
+        dimensions=768,  # Same as dense for compatibility
+        approximate_neighbors_count=10
+    )
+    ```
+  </Step>
+  
+  <Step title="Deploy & Query">
+    ```python
+    from google.cloud.aiplatform.matching_engine.matching_engine_index_endpoint import HybridQuery
+    
+    # Create endpoint
+    endpoint = aiplatform.MatchingEngineIndexEndpoint.create(
+        display_name="sparse-endpoint",
+        public_endpoint_enabled=True
+    )
+    
+    # Deploy
+    endpoint.deploy_index(
+        index=sparse_index,
+        deployed_index_id="sparse_deployed"
+    )
+    
+    # Query with sparse embedding
+    query_text = "Kids"
+    query_sparse = get_sparse_embedding(query_text)
+    
+    query = HybridQuery(
+        sparse_embedding_dimensions=query_sparse["dimensions"],
+        sparse_embedding_values=query_sparse["values"]
+    )
+    
+    response = endpoint.find_neighbors(
+        deployed_index_id="sparse_deployed",
+        queries=[query],
+        num_neighbors=5
+    )
+    
+    for neighbor in response[0]:
+        print(f"{df.loc[int(neighbor.id), 'title']}")
+    ```
+  </Step>
+</Steps>
+
+## Full Hybrid Search
+
+Combine dense and sparse embeddings in a single index:
+
+### 1. Generate Hybrid Embeddings
+
+```python
+from google import genai
+from sklearn.feature_extraction.text import TfidfVectorizer
+import pandas as pd
+
+# Initialize
+client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+vectorizer = TfidfVectorizer()
+
+# Load data
+df = pd.read_csv("products.csv")
+vectorizer.fit_transform(df['title'])
+
+# Helper functions
+def get_dense_embedding(text):
+    response = client.models.embed_content(
+        model="text-embedding-005",
+        contents=[text]
+    )
+    return response.embeddings[0].values
+
+def get_sparse_embedding(text):
+    tfidf = vectorizer.transform([text])
+    return {
+        "values": [float(v) for v in tfidf.data],
+        "dimensions": [int(i) for i in tfidf.indices]
+    }
+
+# Generate hybrid embeddings
+items = []
+for i, row in df.iterrows():
+    title = row['title']
+    items.append({
+        "id": i,
+        "title": title,
+        "embedding": get_dense_embedding(title),
+        "sparse_embedding": get_sparse_embedding(title)
+    })
+```
+
+### 2. Create Hybrid Index
+
+```python
+import json
+from google.cloud import aiplatform
+
+# Save to JSONL
+with open("hybrid_embeddings.json", "w") as f:
+    for item in items:
+        f.write(json.dumps(item) + "\n")
+
+# Upload
+! gsutil cp hybrid_embeddings.json gs://your-bucket/
+
+# Create index
+aiplatform.init(project=PROJECT_ID, location=LOCATION)
+
+hybrid_index = aiplatform.MatchingEngineIndex.create_tree_ah_index(
+    display_name="hybrid-index",
+    contents_delta_uri="gs://your-bucket/",
+    dimensions=768,
+    approximate_neighbors_count=10
+)
+
+# Deploy
+endpoint = aiplatform.MatchingEngineIndexEndpoint.create(
+    display_name="hybrid-endpoint",
+    public_endpoint_enabled=True
+)
+
+endpoint.deploy_index(
+    index=hybrid_index,
+    deployed_index_id="hybrid_deployed"
+)
+```
+
+### 3. Query with Hybrid Search
+
+```python
+from google.cloud.aiplatform.matching_engine.matching_engine_index_endpoint import HybridQuery
+
+# Query text
+query_text = "Kids"
+
+# Generate both embeddings
+query_dense = get_dense_embedding(query_text)
+query_sparse = get_sparse_embedding(query_text)
+
+# Create hybrid query
+query = HybridQuery(
+    dense_embedding=query_dense,
+    sparse_embedding_dimensions=query_sparse["dimensions"],
+    sparse_embedding_values=query_sparse["values"],
+    rrf_ranking_alpha=0.5  # Equal weight to both
+)
+
+# Search
+response = endpoint.find_neighbors(
+    deployed_index_id="hybrid_deployed",
+    queries=[query],
+    num_neighbors=10
+)
+
+# Display results with scores
+for neighbor in response[0]:
+    title = df.loc[int(neighbor.id), 'title']
+    dense_score = neighbor.distance if neighbor.distance else 0.0
+    sparse_score = neighbor.sparse_distance if neighbor.sparse_distance else 0.0
+    print(f"{title:40} | Dense: {dense_score:.3f} | Sparse: {sparse_score:.3f}")
+```
+
+**Example Output:**
+```
+Google Blue Kids Sunglasses              | Dense: 0.677 | Sparse: 0.606
+Google Red Kids Sunglasses               | Dense: 0.665 | Sparse: 0.572
+YouTube Kids Coloring Pencils            | Dense: 0.655 | Sparse: 0.478
+Google White Classic Youth Tee           | Dense: 0.645 | Sparse: 0.000
+Google Doogler Youth Tee                 | Dense: 0.639 | Sparse: 0.000
+```
+
+<Note>
+Notice how "Youth" items appear even without the keyword "Kids" - that's semantic search. Items with "Kids" rank higher due to keyword matching.
+</Note>
+
+## RRF Ranking Alpha
+
+The `rrf_ranking_alpha` parameter controls the balance between semantic and keyword search:
+
+<Tabs>
+  <Tab title="0.5 (Balanced)">
+    Equal weight to both approaches:
+    ```python
+    query = HybridQuery(
+        dense_embedding=query_dense,
+        sparse_embedding_dimensions=query_sparse["dimensions"],
+        sparse_embedding_values=query_sparse["values"],
+        rrf_ranking_alpha=0.5
+    )
+    ```
+  </Tab>
+  
+  <Tab title="1.0 (Semantic Only)">
+    Use only semantic search, ignore keywords:
+    ```python
+    query = HybridQuery(
+        dense_embedding=query_dense,
+        sparse_embedding_dimensions=query_sparse["dimensions"],
+        sparse_embedding_values=query_sparse["values"],
+        rrf_ranking_alpha=1.0
+    )
+    ```
+  </Tab>
+  
+  <Tab title="0.0 (Keywords Only)">
+    Use only keyword search, ignore semantics:
+    ```python
+    query = HybridQuery(
+        dense_embedding=query_dense,
+        sparse_embedding_dimensions=query_sparse["dimensions"],
+        sparse_embedding_values=query_sparse["values"],
+        rrf_ranking_alpha=0.0
+    )
+    ```
+  </Tab>
+  
+  <Tab title="0.7 (Semantic Bias)">
+    Favor semantic search with some keyword influence:
+    ```python
+    query = HybridQuery(
+        dense_embedding=query_dense,
+        sparse_embedding_dimensions=query_sparse["dimensions"],
+        sparse_embedding_values=query_sparse["values"],
+        rrf_ranking_alpha=0.7
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## Reciprocal Rank Fusion (RRF)
+
+RRF merges ranked lists from different sources:
+
+<Steps>
+  <Step title="Calculate Reciprocal Ranks">
+    For each item, take the inverse of its position:
+    - Rank 1 → 1/1 = 1.0
+    - Rank 2 → 1/2 = 0.5
+    - Rank 3 → 1/3 = 0.33
+  </Step>
+  
+  <Step title="Sum Across Sources">
+    Add reciprocal ranks from dense and sparse results
+  </Step>
+  
+  <Step title="Re-rank">
+    Sort by combined score in descending order
+  </Step>
+</Steps>
+
+This ensures items that rank well in **both** dense and sparse search appear at the top.
+
+## Advanced: Alternative Vectorizers
+
+### BM25
+
+Improved version of TF-IDF:
+
+```python
+from rank_bm25 import BM25Okapi
+import numpy as np
+
+# Tokenize corpus
+tokenized_corpus = [doc.lower().split() for doc in df['title']]
+
+# Initialize BM25
+bm25 = BM25Okapi(tokenized_corpus)
+
+def get_bm25_embedding(text, vocab_size=10000):
+    """Generate BM25 sparse embedding"""
+    tokenized_query = text.lower().split()
+    scores = bm25.get_scores(tokenized_query)
+    
+    # Convert to sparse format
+    nonzero_indices = np.nonzero(scores)[0]
+    return {
+        "values": scores[nonzero_indices].tolist(),
+        "dimensions": nonzero_indices.tolist()
+    }
+```
+
+### SPLADE
+
+Learned sparse embeddings with semantic awareness:
+
+```python
+from transformers import AutoTokenizer, AutoModelForMaskedLM
+import torch
+
+# Load SPLADE model
+tokenizer = AutoTokenizer.from_pretrained("naver/splade-cocondenser-ensembledistil")
+model = AutoModelForMaskedLM.from_pretrained("naver/splade-cocondenser-ensembledistil")
+
+def get_splade_embedding(text):
+    """Generate SPLADE sparse embedding"""
+    inputs = tokenizer(text, return_tensors="pt")
+    with torch.no_grad():
+        logits = model(**inputs).logits
+    
+    # Get importance scores
+    scores = torch.max(torch.log(1 + torch.relu(logits)), dim=1).values.squeeze()
+    
+    # Convert to sparse format
+    nonzero = torch.nonzero(scores).squeeze()
+    return {
+        "values": scores[nonzero].tolist(),
+        "dimensions": nonzero.tolist()
+    }
+```
+
+## Complete Example
+
+<CodeGroup>
+```python 1. Prepare Hybrid Data
+from google import genai
+from sklearn.feature_extraction.text import TfidfVectorizer
+import pandas as pd
+import json
+
+# Setup
+client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+df = pd.read_csv("products.csv")
+
+# Train vectorizer
+vectorizer = TfidfVectorizer()
+vectorizer.fit_transform(df['title'])
+
+# Generate embeddings
+hybrid_data = []
+for i, row in df.iterrows():
+    # Dense
+    dense = client.models.embed_content(
+        model="text-embedding-005",
+        contents=[row['title']]
+    ).embeddings[0].values
+    
+    # Sparse
+    tfidf = vectorizer.transform([row['title']])
+    sparse = {
+        "values": [float(v) for v in tfidf.data],
+        "dimensions": [int(d) for d in tfidf.indices]
+    }
+    
+    hybrid_data.append({
+        "id": str(i),
+        "embedding": dense,
+        "sparse_embedding": sparse
+    })
+
+# Save
+with open("hybrid.json", "w") as f:
+    for item in hybrid_data:
+        f.write(json.dumps(item) + "\n")
+```
+
+```python 2. Create & Deploy Index
+from google.cloud import aiplatform
+
+# Upload data
+! gsutil mb -l us-central1 gs://my-hybrid-bucket
+! gsutil cp hybrid.json gs://my-hybrid-bucket/
+
+# Create index
+aiplatform.init(project=PROJECT_ID, location=LOCATION)
+
+index = aiplatform.MatchingEngineIndex.create_tree_ah_index(
+    display_name="products-hybrid",
+    contents_delta_uri="gs://my-hybrid-bucket/",
+    dimensions=768,
+    approximate_neighbors_count=10
+)
+
+# Deploy
+endpoint = aiplatform.MatchingEngineIndexEndpoint.create(
+    display_name="products-endpoint",
+    public_endpoint_enabled=True
+)
+
+endpoint.deploy_index(
+    index=index,
+    deployed_index_id="products_v1"
+)
+```
+
+```python 3. Search
+from google.cloud.aiplatform.matching_engine.matching_engine_index_endpoint import HybridQuery
+
+query_text = "kids sunglasses"
+
+# Generate query embeddings
+query_dense = client.models.embed_content(
+    model="text-embedding-005",
+    contents=[query_text]
+).embeddings[0].values
+
+query_tfidf = vectorizer.transform([query_text])
+query_sparse = {
+    "values": [float(v) for v in query_tfidf.data],
+    "dimensions": [int(d) for d in query_tfidf.indices]
+}
+
+# Hybrid query
+query = HybridQuery(
+    dense_embedding=query_dense,
+    sparse_embedding_dimensions=query_sparse["dimensions"],
+    sparse_embedding_values=query_sparse["values"],
+    rrf_ranking_alpha=0.5
+)
+
+# Search
+results = endpoint.find_neighbors(
+    deployed_index_id="products_v1",
+    queries=[query],
+    num_neighbors=5
+)
+
+# Display
+for neighbor in results[0]:
+    product = df.loc[int(neighbor.id)]
+    print(f"{product['title']} - Dense: {neighbor.distance:.3f}, Sparse: {neighbor.sparse_distance:.3f}")
+```
+</CodeGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Start with 0.5 Alpha">
+    Equal weighting is a good baseline. Tune based on your specific use case.
+  </Card>
+  
+  <Card title="Use Subword Tokenization">
+    Better than word-level for handling unknown terms and typos.
+  </Card>
+  
+  <Card title="Evaluate Both Approaches">
+    Test pure semantic, pure keyword, and hybrid to find the best balance.
+  </Card>
+  
+  <Card title="Consider BM25 or SPLADE">
+    More sophisticated than TF-IDF for production systems.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+- [Implement reranking](https://cloud.google.com/vertex-ai/docs/generative-ai/model-reference/text-embeddings-api) for multi-stage retrieval
+- [Tune text embeddings](/embeddings/text-embeddings#tuning-text-embeddings) for domain-specific search
+- [Build RAG with hybrid search](https://cloud.google.com/use-cases/retrieval-augmented-generation)

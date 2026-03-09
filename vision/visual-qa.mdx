@@ -1,0 +1,641 @@
+---
+title: 'Visual Question Answering'
+description: 'Understand, analyze, and answer questions about images using Gemini multimodal models'
+---
+
+## Overview
+
+Visual Question Answering (VQA) enables you to ask questions about images and receive intelligent, context-aware responses. Using Gemini's multimodal capabilities, you can:
+
+- Analyze image content and extract information
+- Generate detailed image descriptions (captioning)
+- Answer specific questions about visual elements
+- Perform visual reasoning and comparison tasks
+- Extract text from images (OCR)
+- Identify objects, scenes, and activities
+
+## Getting Started
+
+### Setup
+
+```python
+from google import genai
+from google.genai.types import Part, GenerateContentConfig
+from IPython.display import Image as IPImage, display, Markdown
+
+# Initialize client
+PROJECT_ID = "your-project-id"
+LOCATION = "us-central1"
+client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+
+# Use a Gemini model with vision capabilities
+MODEL_ID = "gemini-2.5-flash"
+```
+
+## Image Captioning
+
+### Basic Image Description
+
+Generate natural language descriptions of images:
+
+```python
+# Load an image
+with open("landscape.jpg", "rb") as f:
+    image_data = f.read()
+
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        Part.from_bytes(
+            data=image_data,
+            mime_type="image/jpeg",
+        ),
+        "Describe this image in detail.",
+    ],
+)
+
+print(response.text)
+```
+
+### Structured Captions
+
+Request captions in specific formats:
+
+<CodeGroup>
+```python Short Caption
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        Part.from_bytes(data=image_data, mime_type="image/jpeg"),
+        "Generate a short, single-sentence caption for this image.",
+    ],
+)
+```
+
+```python Detailed Description
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        Part.from_bytes(data=image_data, mime_type="image/jpeg"),
+        """Provide a detailed description including:
+        - Main subjects and their actions
+        - Setting and environment
+        - Colors, lighting, and mood
+        - Notable details or objects""",
+    ],
+)
+```
+
+```python Social Media Caption
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        Part.from_bytes(data=image_data, mime_type="image/jpeg"),
+        "Write an engaging social media caption for this image with relevant hashtags.",
+    ],
+)
+```
+</CodeGroup>
+
+### Alt Text Generation
+
+Create accessible descriptions for images:
+
+```python
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        Part.from_bytes(data=image_data, mime_type="image/jpeg"),
+        "Generate concise alt text for this image for web accessibility.",
+    ],
+)
+
+alt_text = response.text
+print(f'<img src="image.jpg" alt="{alt_text}">')
+```
+
+## Visual Question Answering
+
+### Specific Questions
+
+Ask targeted questions about image content:
+
+```python
+with open("street_scene.jpg", "rb") as f:
+    image_data = f.read()
+
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        Part.from_bytes(data=image_data, mime_type="image/jpeg"),
+        "How many people are in this image?",
+    ],
+)
+
+print(response.text)
+```
+
+### Multiple Questions
+
+Ask several questions about the same image:
+
+```python
+questions = [
+    "What is the main subject of this image?",
+    "What time of day does it appear to be?",
+    "What emotions or mood does this image convey?",
+]
+
+for question in questions:
+    response = client.models.generate_content(
+        model=MODEL_ID,
+        contents=[
+            Part.from_bytes(data=image_data, mime_type="image/jpeg"),
+            question,
+        ],
+    )
+    print(f"Q: {question}")
+    print(f"A: {response.text}\n")
+```
+
+## Object Detection and Recognition
+
+### Identify Objects
+
+List objects present in an image:
+
+```python
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        Part.from_bytes(data=image_data, mime_type="image/jpeg"),
+        "List all the distinct objects you can identify in this image.",
+    ],
+)
+
+print(response.text)
+```
+
+### Object Counting
+
+Count specific objects or categories:
+
+```python
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        Part.from_bytes(data=image_data, mime_type="image/jpeg"),
+        "Count the number of cars visible in this parking lot image.",
+    ],
+)
+
+print(response.text)
+```
+
+### Object Relationships
+
+Understand spatial relationships between objects:
+
+```python
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        Part.from_bytes(data=image_data, mime_type="image/jpeg"),
+        "Describe the spatial relationship between the objects in this image. What is in front, behind, left, and right?",
+    ],
+)
+
+print(response.text)
+```
+
+## Text Extraction (OCR)
+
+### Extract Text from Images
+
+Read and transcribe text visible in images:
+
+```python
+with open("document.jpg", "rb") as f:
+    image_data = f.read()
+
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        Part.from_bytes(data=image_data, mime_type="image/jpeg"),
+        "Extract all the text visible in this image.",
+    ],
+)
+
+print(response.text)
+```
+
+### Structured Text Extraction
+
+Extract text with specific formatting:
+
+```python
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        Part.from_bytes(data=image_data, mime_type="image/jpeg"),
+        """Extract the text from this business card and format it as:
+        Name:
+        Title:
+        Company:
+        Email:
+        Phone:""",
+    ],
+)
+
+print(response.text)
+```
+
+### Multilingual OCR
+
+Extract text in multiple languages:
+
+```python
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        Part.from_bytes(data=image_data, mime_type="image/jpeg"),
+        "Extract all text from this image and identify the language(s) used.",
+    ],
+)
+
+print(response.text)
+```
+
+## Scene Understanding
+
+### Environment Analysis
+
+Analyze the setting and context:
+
+```python
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        Part.from_bytes(data=image_data, mime_type="image/jpeg"),
+        """Analyze this scene:
+        1. What type of location is this?
+        2. What activities are taking place?
+        3. What is the overall atmosphere?
+        4. What time period does this appear to be from?""",
+    ],
+)
+
+print(response.text)
+```
+
+### Activity Recognition
+
+Identify actions and activities:
+
+```python
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        Part.from_bytes(data=image_data, mime_type="image/jpeg"),
+        "What activities or actions are the people in this image performing?",
+    ],
+)
+
+print(response.text)
+```
+
+## Visual Reasoning
+
+### Comparison Tasks
+
+Compare multiple images:
+
+```python
+with open("image1.jpg", "rb") as f:
+    image1_data = f.read()
+
+with open("image2.jpg", "rb") as f:
+    image2_data = f.read()
+
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        Part.from_bytes(data=image1_data, mime_type="image/jpeg"),
+        Part.from_bytes(data=image2_data, mime_type="image/jpeg"),
+        "Compare these two images. What are the similarities and differences?",
+    ],
+)
+
+print(response.text)
+```
+
+### Visual Problem Solving
+
+Solve problems based on visual information:
+
+```python
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        Part.from_bytes(data=image_data, mime_type="image/jpeg"),
+        "This is a furniture assembly diagram. Explain the steps shown in sequence.",
+    ],
+)
+
+print(response.text)
+```
+
+### Chart and Graph Analysis
+
+Extract insights from data visualizations:
+
+```python
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        Part.from_bytes(data=chart_data, mime_type="image/png"),
+        """Analyze this chart:
+        1. What type of chart is this?
+        2. What are the key trends?
+        3. What insights can you extract?
+        4. Are there any notable anomalies?""",
+    ],
+)
+
+print(response.text)
+```
+
+## Batch Processing
+
+### Process Multiple Images
+
+Analyze multiple images efficiently:
+
+```python
+import os
+from pathlib import Path
+
+image_folder = Path("images")
+results = []
+
+for image_path in image_folder.glob("*.jpg"):
+    with open(image_path, "rb") as f:
+        image_data = f.read()
+    
+    response = client.models.generate_content(
+        model=MODEL_ID,
+        contents=[
+            Part.from_bytes(data=image_data, mime_type="image/jpeg"),
+            "Generate a short caption for this image.",
+        ],
+    )
+    
+    results.append({
+        "filename": image_path.name,
+        "caption": response.text,
+    })
+
+# Save results
+import json
+with open("captions.json", "w") as f:
+    json.dump(results, f, indent=2)
+```
+
+## Using Images from Cloud Storage
+
+### Load from GCS URIs
+
+Reference images stored in Google Cloud Storage:
+
+```python
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        Part.from_uri(
+            file_uri="gs://your-bucket/images/photo.jpg",
+            mime_type="image/jpeg",
+        ),
+        "Describe this image.",
+    ],
+)
+
+print(response.text)
+```
+
+### Process Multiple GCS Images
+
+```python
+image_uris = [
+    "gs://your-bucket/images/img1.jpg",
+    "gs://your-bucket/images/img2.jpg",
+    "gs://your-bucket/images/img3.jpg",
+]
+
+for uri in image_uris:
+    response = client.models.generate_content(
+        model=MODEL_ID,
+        contents=[
+            Part.from_uri(file_uri=uri, mime_type="image/jpeg"),
+            "What is the main subject of this image?",
+        ],
+    )
+    print(f"{uri}: {response.text}\n")
+```
+
+## Advanced Configuration
+
+### JSON Output Format
+
+Request structured JSON responses:
+
+```python
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        Part.from_bytes(data=image_data, mime_type="image/jpeg"),
+        """Analyze this image and return a JSON object with:
+        {
+          "objects": [list of objects],
+          "scene_type": "indoor/outdoor",
+          "dominant_colors": [list of colors],
+          "mood": "description of mood",
+          "num_people": number
+        }""",
+    ],
+)
+
+import json
+result = json.loads(response.text)
+print(result)
+```
+
+### Temperature Control
+
+Adjust response creativity:
+
+```python
+config = GenerateContentConfig(
+    temperature=0.2,  # Lower = more deterministic
+    # temperature=1.0,  # Higher = more creative
+)
+
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        Part.from_bytes(data=image_data, mime_type="image/jpeg"),
+        "Describe this image.",
+    ],
+    config=config,
+)
+```
+
+<Note>
+  Use lower temperature (0.0-0.3) for factual descriptions and higher temperature (0.7-1.0) for creative captions.
+</Note>
+
+## Fine-Tuning for Image Captioning
+
+For specialized captioning tasks, you can fine-tune Gemini models:
+
+```python
+from vertexai.preview.tuning import sft
+
+# Prepare training data in JSONL format
+# Each line: {"contents": [{"role": "user", "parts": [{"fileData": {...}}, {"text": "..."}]}, {"role": "model", "parts": [{"text": "..."}]}]}
+
+sft_tuning_job = sft.train(
+    source_model="gemini-2.5-flash",
+    train_dataset="gs://your-bucket/training_data.jsonl",
+    validation_dataset="gs://your-bucket/validation_data.jsonl",
+    epochs=4,
+    learning_rate_multiplier=1.0,
+)
+
+# Wait for training to complete
+sft_tuning_job.wait()
+
+# Use the tuned model
+tuned_model = sft_tuning_job.tuned_model
+```
+
+<Note>
+  Fine-tuning is ideal when you need domain-specific captions (e.g., medical images, fashion products, or technical diagrams).
+</Note>
+
+## Use Cases
+
+<CardGroup cols={2}>
+  <Card title="E-commerce" icon="cart-shopping">
+    Generate product descriptions, extract attributes, and create catalog metadata from product images.
+  </Card>
+  
+  <Card title="Accessibility" icon="universal-access">
+    Create alt text for images, describe visual content for screen readers, and improve web accessibility.
+  </Card>
+  
+  <Card title="Content Moderation" icon="shield-halved">
+    Analyze images for inappropriate content, identify policy violations, and classify image categories.
+  </Card>
+  
+  <Card title="Document Processing" icon="file-lines">
+    Extract text from scanned documents, process receipts and invoices, and digitize forms.
+  </Card>
+  
+  <Card title="Social Media" icon="hashtag">
+    Auto-generate captions, suggest hashtags, and create engaging post descriptions.
+  </Card>
+  
+  <Card title="Medical Imaging" icon="heart-pulse">
+    Describe medical images, identify anatomical structures, and assist in diagnostic workflows (with fine-tuning).
+  </Card>
+</CardGroup>
+
+## Best Practices
+
+<Steps>
+  <Step title="Use high-quality images">
+    Ensure images are well-lit, in focus, and at sufficient resolution for accurate analysis.
+  </Step>
+  
+  <Step title="Write clear, specific prompts">
+    Be explicit about what information you want extracted. Use examples if needed.
+  </Step>
+  
+  <Step title="Validate critical responses">
+    For safety-critical applications, implement additional validation of model outputs.
+  </Step>
+  
+  <Step title="Handle edge cases">
+    Account for low-quality images, obscured subjects, or ambiguous content in your application logic.
+  </Step>
+  
+  <Step title="Consider privacy">
+    Ensure you have appropriate permissions before processing images containing people or sensitive information.
+  </Step>
+</Steps>
+
+## Limitations
+
+<Warning>
+  Be aware of these limitations:
+  - Accuracy varies based on image quality and complexity
+  - May hallucinate details not actually present in images
+  - Performance depends on the specific Gemini model variant used
+  - Small text or fine details may be difficult to read
+  - Some specialized domains may require fine-tuning
+</Warning>
+
+## Complete Example
+
+Here's a comprehensive example combining multiple VQA capabilities:
+
+```python
+from google import genai
+from google.genai.types import Part
+import json
+
+# Initialize
+PROJECT_ID = "your-project-id"
+client = genai.Client(vertexai=True, project=PROJECT_ID, location="us-central1")
+MODEL_ID = "gemini-2.5-flash"
+
+# Load image
+with open("scene.jpg", "rb") as f:
+    image_data = f.read()
+
+# Comprehensive analysis
+analysis_prompt = """Analyze this image comprehensively:
+
+1. Scene Description: Provide a detailed description of the scene.
+2. Objects: List all identifiable objects.
+3. People: How many people are present? What are they doing?
+4. Text: Extract any visible text.
+5. Colors: What are the dominant colors?
+6. Mood: Describe the overall mood or atmosphere.
+7. Time/Setting: When and where does this appear to be?
+
+Provide your analysis in a clear, structured format.
+"""
+
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        Part.from_bytes(data=image_data, mime_type="image/jpeg"),
+        analysis_prompt,
+    ],
+)
+
+print("=== Comprehensive Image Analysis ===")
+print(response.text)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Image Generation" icon="wand-magic-sparkles" href="/vision/image-generation">
+    Create new images from text descriptions
+  </Card>
+  <Card title="Image Editing" icon="pen-to-square" href="/vision/image-editing">
+    Modify and enhance existing images
+  </Card>
+</CardGroup>

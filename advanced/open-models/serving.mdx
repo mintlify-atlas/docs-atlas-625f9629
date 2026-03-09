@@ -1,0 +1,638 @@
+---
+title: Model Serving and Inference Optimization
+description: Deploy and optimize open-source models with vLLM, TGI, and custom inference engines
+---
+
+## Overview
+
+Vertex AI provides multiple options for serving open-source models with optimized inference performance. Choose the right serving solution based on your latency, throughput, and cost requirements.
+
+## Serving Options
+
+<Tabs>
+  <Tab title="vLLM">
+    High-throughput serving with PagedAttention:
+    
+    - **Best for**: High-volume production workloads
+    - **Features**: Continuous batching, KV cache optimization
+    - **Throughput**: Up to 24x higher than standard serving
+    - **Models**: Most LLMs (Llama, Gemma, Mistral, etc.)
+  </Tab>
+  <Tab title="Text Generation Inference (TGI)">
+    Hugging Face's production-ready inference server:
+    
+    - **Best for**: Hugging Face Hub models
+    - **Features**: Flash Attention, tensor parallelism
+    - **Latency**: Optimized for low-latency inference
+    - **Models**: All HF-compatible transformers
+  </Tab>
+  <Tab title="Ollama">
+    Lightweight local model serving:
+    
+    - **Best for**: Development and small-scale deployments
+    - **Features**: Easy setup, local execution
+    - **Deployment**: Cloud Run, GKE, or local
+    - **Models**: Curated model library
+  </Tab>
+  <Tab title="Custom Handlers">
+    PyTorch inference with custom logic:
+    
+    - **Best for**: Specialized preprocessing/postprocessing
+    - **Features**: Full control over inference pipeline
+    - **Flexibility**: Support for any PyTorch model
+    - **Use cases**: Vision models, multimodal, custom architectures
+  </Tab>
+</Tabs>
+
+## vLLM Deployment
+
+vLLM is the recommended option for high-performance LLM serving.
+
+### Basic vLLM Deployment
+
+<Steps>
+  <Step title="Install Dependencies">
+    ```bash
+    pip install --upgrade google-cloud-aiplatform huggingface_hub
+    ```
+  </Step>
+  <Step title="Initialize Vertex AI">
+    ```python
+    import vertexai
+    from vertexai import model_garden
+    
+    PROJECT_ID = "your-project-id"
+    LOCATION = "us-central1"
+    
+    vertexai.init(project=PROJECT_ID, location=LOCATION)
+    ```
+  </Step>
+  <Step title="Deploy with vLLM">
+    ```python
+    # Models deployed through Model Garden SDK automatically use vLLM
+    model = model_garden.OpenModel("meta/llama3_1@llama-3.1-8b-instruct")
+    
+    endpoint = model.deploy(
+        machine_type="g2-standard-12",
+        accelerator_type="NVIDIA_L4",
+        accelerator_count=1,
+        accept_eula=True
+    )
+    ```
+  </Step>
+  <Step title="Test Inference">
+    ```python
+    response = endpoint.predict(
+        instances=[{
+            "prompt": "Explain machine learning",
+            "max_tokens": 200,
+            "temperature": 0.7
+        }]
+    )
+    
+    print(response.predictions[0])
+    ```
+  </Step>
+</Steps>
+
+### vLLM with Multiple LoRA Adapters
+
+Serve one base model with multiple task-specific adapters:
+
+<CodeGroup>
+```python Download Adapters
+from huggingface_hub import snapshot_download
+import os
+
+os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+
+# Download LoRA adapters
+sql_adapter_path = snapshot_download(
+    repo_id="google-cloud-partnership/gemma-2-2b-it-lora-sql",
+    local_dir="./adapters/sql"
+)
+
+code_adapter_path = snapshot_download(
+    repo_id="google-cloud-partnership/gemma-2-2b-it-lora-magicoder",
+    local_dir="./adapters/code"
+)
+
+# Upload to GCS
+BUCKET_URI = "gs://your-bucket"
+!gcloud storage cp -r ./adapters/* {BUCKET_URI}/lora-adapters/
+```
+
+```python Build Custom Container
+# Dockerfile for vLLM with LoRA support
+FROM vllm/vllm-openai:latest
+
+# Copy entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+```
+
+```bash Entrypoint Script
+#!/bin/bash
+# entrypoint.sh
+
+# Download LoRA adapters from GCS
+gcloud storage cp -r ${LORA_ADAPTERS_GCS_URI}/* /lora-adapters/
+
+# Start vLLM server with LoRA support
+python -m vllm.entrypoints.openai.api_server \
+  --model ${BASE_MODEL} \
+  --enable-lora \
+  --lora-modules sql=/lora-adapters/sql code=/lora-adapters/code \
+  --max-lora-rank 64 \
+  --port 8000 \
+  --host 0.0.0.0
+```
+
+```python Deploy
+from google.cloud import aiplatform
+
+# Upload model
+model = aiplatform.Model.upload(
+    display_name="gemma-lora-multi-adapter",
+    serving_container_image_uri=f"{LOCATION}-docker.pkg.dev/{PROJECT_ID}/repo/vllm-lora:latest",
+    serving_container_environment_variables={
+        "BASE_MODEL": "google/gemma-2-2b-it",
+        "LORA_ADAPTERS_GCS_URI": f"{BUCKET_URI}/lora-adapters"
+    },
+    serving_container_ports=[8000]
+)
+
+# Deploy
+endpoint = model.deploy(
+    machine_type="g2-standard-12",
+    accelerator_type="NVIDIA_L4",
+    accelerator_count=1
+)
+```
+</CodeGroup>
+
+### Using Multiple Adapters
+
+```python
+import openai
+
+client = openai.OpenAI(
+    base_url=f"https://{endpoint.resource_name}/v1",
+    api_key=auth_token
+)
+
+# Use SQL adapter
+sql_response = client.chat.completions.create(
+    model="sql",  # Specify adapter name
+    messages=[{
+        "role": "user",
+        "content": "Write a SQL query to find top 10 customers by revenue"
+    }]
+)
+
+# Use code adapter
+code_response = client.chat.completions.create(
+    model="code",  # Different adapter
+    messages=[{
+        "role": "user",
+        "content": "Write a Python function to merge two sorted arrays"
+    }]
+)
+```
+
+## Text Generation Inference (TGI)
+
+Deploy Hugging Face models with TGI for optimized performance.
+
+### TGI Deployment
+
+<Steps>
+  <Step title="Authenticate with Hugging Face">
+    ```python
+    from huggingface_hub import interpreter_login, get_token
+    
+    # Login to Hugging Face
+    interpreter_login()
+    
+    # Get token
+    hf_token = get_token()
+    ```
+  </Step>
+  <Step title="Create Model Registry Entry">
+    ```python
+    from google.cloud import aiplatform
+    
+    # Upload model with TGI container
+    model = aiplatform.Model.upload(
+        display_name="gemma-tgi",
+        serving_container_image_uri="us-docker.pkg.dev/vertex-ai/vertex-vision-model-garden-dockers/pytorch-hf-tgi-serve:20240220_0936_RC01",
+        serving_container_environment_variables={
+            "MODEL_ID": "google/gemma-7b-it",
+            "HUGGING_FACE_HUB_TOKEN": hf_token,
+            "DEPLOY_SOURCE": "notebook"
+        },
+        serving_container_ports=[7080]
+    )
+    ```
+  </Step>
+  <Step title="Deploy to Endpoint">
+    ```python
+    endpoint = model.deploy(
+        machine_type="g2-standard-12",
+        accelerator_type="NVIDIA_L4",
+        accelerator_count=1,
+        traffic_split={"0": 100},
+        deploy_request_timeout=1800
+    )
+    ```
+  </Step>
+  <Step title="Make Predictions">
+    ```python
+    prediction = endpoint.predict(
+        instances=[{
+            "inputs": "Explain quantum computing",
+            "parameters": {
+                "max_new_tokens": 200,
+                "temperature": 0.7,
+                "top_p": 0.9
+            }
+        }]
+    )
+    
+    print(prediction.predictions[0])
+    ```
+  </Step>
+</Steps>
+
+### TGI with Multiple LoRA Adapters
+
+```python
+# Environment variables for TGI with LoRA
+env_vars = {
+    "MODEL_ID": "google/gemma-2-9b-it",
+    "HUGGING_FACE_HUB_TOKEN": hf_token,
+    "NUM_SHARD": "1",
+    "MAX_INPUT_LENGTH": "4096",
+    "MAX_TOTAL_TOKENS": "8192",
+    "LORA_ADAPTERS": "sql,code",  # Comma-separated adapter IDs
+    "LORA_ADAPTER_sql": "google-cloud-partnership/gemma-2-9b-it-lora-sql",
+    "LORA_ADAPTER_code": "google-cloud-partnership/gemma-2-9b-it-lora-magicoder"
+}
+
+model = aiplatform.Model.upload(
+    display_name="gemma-tgi-multi-lora",
+    serving_container_image_uri=TGI_IMAGE_URI,
+    serving_container_environment_variables=env_vars,
+    serving_container_ports=[7080]
+)
+```
+
+## Ollama on Cloud Run
+
+Deploy models with Ollama for lightweight serving:
+
+<CodeGroup>
+```dockerfile Dockerfile
+FROM ollama/ollama:latest
+
+# Copy model
+COPY Modelfile /Modelfile
+
+# Pull and create model
+RUN ollama serve & \
+    sleep 5 && \
+    ollama pull gemma2:2b && \
+    ollama create mymodel -f /Modelfile
+
+EXPOSE 11434
+
+CMD ["serve"]
+```
+
+```text Modelfile
+FROM gemma2:2b
+
+SYSTEM """You are a helpful assistant specialized in coding."""
+
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+PARAMETER top_k 40
+```
+
+```bash Deploy to Cloud Run
+# Build and push container
+gcloud builds submit --tag gcr.io/${PROJECT_ID}/ollama-gemma2
+
+# Deploy to Cloud Run
+gcloud run deploy ollama-gemma2 \
+  --image gcr.io/${PROJECT_ID}/ollama-gemma2 \
+  --platform managed \
+  --region us-central1 \
+  --memory 8Gi \
+  --cpu 4 \
+  --port 11434 \
+  --allow-unauthenticated
+```
+
+```python Test Endpoint
+import requests
+
+CLOUD_RUN_URL = "https://ollama-gemma2-xxx.run.app"
+
+response = requests.post(
+    f"{CLOUD_RUN_URL}/api/generate",
+    json={
+        "model": "mymodel",
+        "prompt": "Write a Python function to reverse a string",
+        "stream": False
+    }
+)
+
+print(response.json()["response"])
+```
+</CodeGroup>
+
+## Custom PyTorch Handlers
+
+Deploy models with custom preprocessing/postprocessing:
+
+<CodeGroup>
+```python handler.py
+from ts.torch_handler.base_handler import BaseHandler
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+class CustomLLMHandler(BaseHandler):
+    def initialize(self, context):
+        self.manifest = context.manifest
+        properties = context.system_properties
+        
+        model_id = properties.get("model_id", "google/gemma-2b")
+        
+        # Load model and tokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(model_id)
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            torch_dtype=torch.bfloat16,
+            device_map="auto"
+        )
+        
+        self.initialized = True
+    
+    def preprocess(self, data):
+        """Custom preprocessing"""
+        prompts = [item.get("data") or item.get("body") for item in data]
+        
+        # Apply chat template
+        inputs = self.tokenizer(
+            prompts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=2048
+        ).to(self.model.device)
+        
+        return inputs
+    
+    def inference(self, inputs):
+        """Model inference"""
+        with torch.no_grad():
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=200,
+                temperature=0.7,
+                top_p=0.9,
+                do_sample=True
+            )
+        return outputs
+    
+    def postprocess(self, outputs):
+        """Custom postprocessing"""
+        responses = self.tokenizer.batch_decode(
+            outputs,
+            skip_special_tokens=True
+        )
+        return responses
+```
+
+```python Deploy Custom Handler
+from google.cloud import aiplatform
+
+# Create model archive with handler
+# torch-model-archiver --model-name custom-llm --handler handler.py ...
+
+# Upload to Vertex AI
+model = aiplatform.Model.upload(
+    display_name="custom-llm-handler",
+    artifact_uri="gs://bucket/model-archive/",
+    serving_container_image_uri="us-docker.pkg.dev/vertex-ai/prediction/pytorch-gpu.2-1:latest",
+    serving_container_environment_variables={
+        "MODEL_ID": "google/gemma-2b",
+        "TS_MODEL_FILE": "custom-llm.mar"
+    }
+)
+
+endpoint = model.deploy(
+    machine_type="g2-standard-8",
+    accelerator_type="NVIDIA_L4",
+    accelerator_count=1
+)
+```
+</CodeGroup>
+
+## Performance Optimization
+
+### Batching Strategies
+
+<Tabs>
+  <Tab title="Continuous Batching (vLLM)">
+    vLLM automatically batches requests:
+    
+    ```python
+    # No configuration needed - vLLM handles batching
+    # Achieves up to 24x higher throughput
+    endpoint = model.deploy(
+        machine_type="g2-standard-12",
+        accelerator_type="NVIDIA_L4",
+        accelerator_count=1
+    )
+    ```
+  </Tab>
+  <Tab title="Static Batching">
+    Configure batch size for TGI:
+    
+    ```python
+    env_vars = {
+        "MAX_BATCH_SIZE": "32",
+        "MAX_BATCH_PREFILL_TOKENS": "4096",
+        "MAX_WAITING_TOKENS": "20"
+    }
+    ```
+  </Tab>
+  <Tab title="Dynamic Batching">
+    Use Triton Inference Server:
+    
+    ```json
+    {
+      "dynamic_batching": {
+        "max_queue_delay_microseconds": 100,
+        "preferred_batch_size": [8, 16],
+        "max_batch_size": 32
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Memory Optimization
+
+<CodeGroup>
+```python Quantization (vLLM)
+# vLLM supports automatic quantization
+endpoint = model.deploy(
+    serving_container_environment_variables={
+        "QUANTIZATION": "awq",  # or "gptq", "squeezellm"
+        "DTYPE": "float16"
+    }
+)
+```
+
+```python KV Cache Optimization
+# Configure KV cache size
+env_vars = {
+    "GPU_MEMORY_UTILIZATION": "0.9",  # Use 90% of GPU memory
+    "MAX_MODEL_LEN": "4096",
+    "BLOCK_SIZE": "16"
+}
+```
+
+```python Tensor Parallelism
+# Distribute model across multiple GPUs
+endpoint = model.deploy(
+    machine_type="g2-standard-48",
+    accelerator_type="NVIDIA_L4",
+    accelerator_count=4,  # Use 4 GPUs
+    serving_container_environment_variables={
+        "TENSOR_PARALLEL_SIZE": "4"
+    }
+)
+```
+</CodeGroup>
+
+### Autoscaling Configuration
+
+```python
+from google.cloud import aiplatform
+
+# Deploy with autoscaling
+endpoint = model.deploy(
+    machine_type="g2-standard-12",
+    accelerator_type="NVIDIA_L4",
+    accelerator_count=1,
+    min_replica_count=1,
+    max_replica_count=10,
+    # Scale based on CPU utilization
+    autoscaling_target_cpu_utilization=70,
+    # Or scale based on accelerator utilization
+    autoscaling_target_accelerator_utilization=80
+)
+```
+
+## Monitoring and Observability
+
+### Cloud Monitoring Integration
+
+```python
+from google.cloud import monitoring_v3
+
+# Create custom metrics
+client = monitoring_v3.MetricServiceClient()
+
+# Query endpoint metrics
+results = client.list_time_series(
+    request={
+        "name": f"projects/{PROJECT_ID}",
+        "filter": f'resource.type="aiplatform.googleapis.com/Endpoint"'
+    }
+)
+
+for result in results:
+    print(f"Metric: {result.metric.type}")
+    print(f"Value: {result.points[0].value.double_value}")
+```
+
+### Logging
+
+```python
+import logging
+from google.cloud import logging as cloud_logging
+
+# Setup Cloud Logging
+client = cloud_logging.Client()
+client.setup_logging()
+
+logger = logging.getLogger(__name__)
+
+# Log predictions
+response = endpoint.predict(instances=[{"prompt": "test"}])
+logger.info(f"Prediction latency: {response.metadata['prediction_latency_ms']}ms")
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Choose Right Serving Engine" icon="gears">
+    Use vLLM for high throughput, TGI for HF models, custom handlers for specialized needs
+  </Card>
+  <Card title="Enable Autoscaling" icon="arrows-up-down">
+    Configure min/max replicas to handle traffic spikes efficiently
+  </Card>
+  <Card title="Optimize GPU Usage" icon="microchip">
+    Use tensor parallelism for large models, quantization for memory constraints
+  </Card>
+  <Card title="Monitor Performance" icon="chart-line">
+    Track latency, throughput, and GPU utilization metrics
+  </Card>
+  <Card title="Use LoRA for Multi-Task" icon="layer-group">
+    Serve multiple specialized models with shared base weights
+  </Card>
+  <Card title="Test Before Production" icon="flask">
+    Load test endpoints to validate performance under expected traffic
+  </Card>
+</CardGroup>
+
+## Cost Optimization
+
+<Steps>
+  <Step title="Right-Size Compute">
+    Start with smaller machine types and scale up based on metrics
+  </Step>
+  <Step title="Use Spot VMs">
+    Enable spot VMs for up to 80% cost savings on fault-tolerant workloads
+  </Step>
+  <Step title="Scale to Zero">
+    Use Cloud Run for infrequent workloads that can scale to zero
+  </Step>
+  <Step title="Batch Requests">
+    Send multiple predictions in a single request to reduce overhead
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Model Garden" icon="seedling" href="/advanced/open-models/model-garden">
+    Explore models available for deployment
+  </Card>
+  <Card title="Fine-Tuning" icon="sliders" href="/advanced/open-models/fine-tuning">
+    Customize models before deployment
+  </Card>
+  <Card title="Example Notebooks" icon="book" href="https://github.com/GoogleCloudPlatform/generative-ai/tree/main/open-models/serving">
+    View serving examples on GitHub
+  </Card>
+  <Card title="Performance Guide" icon="gauge-high" href="https://cloud.google.com/vertex-ai/docs/predictions/optimize-performance">
+    Learn more about optimization techniques
+  </Card>
+</CardGroup>

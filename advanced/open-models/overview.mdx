@@ -1,0 +1,257 @@
+---
+title: Open Models Overview
+description: Discover and deploy open-source models on Google Cloud with Vertex AI Model Garden
+---
+
+## Introduction
+
+Vertex AI provides comprehensive support for deploying and managing open-source models at scale. Whether you're working with language models, image generation models, or custom architectures, Google Cloud offers the infrastructure and tools to deploy, fine-tune, and serve these models efficiently.
+
+## Open Source Model Ecosystem
+
+Vertex AI Model Garden serves as your gateway to a vast ecosystem of open-source models:
+
+<CardGroup cols={2}>
+  <Card title="Model Garden" icon="seedling" href="/advanced/open-models/model-garden">
+    Browse and deploy pre-configured open models from Vertex AI Model Garden
+  </Card>
+  <Card title="Hugging Face Hub" icon="face-smile" href="/advanced/open-models/model-garden#hugging-face-integration">
+    Access over 1 million models from the Hugging Face Hub
+  </Card>
+  <Card title="Fine-Tuning" icon="sliders" href="/advanced/open-models/fine-tuning">
+    Customize models for your specific use cases
+  </Card>
+  <Card title="Optimized Serving" icon="rocket" href="/advanced/open-models/serving">
+    Deploy models with vLLM, TGI, and other inference engines
+  </Card>
+</CardGroup>
+
+## Key Capabilities
+
+### Model Discovery and Deployment
+
+Vertex AI Model Garden SDK simplifies discovering and deploying open models:
+
+```python
+from vertexai import model_garden
+import vertexai
+
+# Initialize Vertex AI
+vertexai.init(project=PROJECT_ID, location=LOCATION)
+
+# List available models
+models = model_garden.list_deployable_models(
+    model_filter="gemma",
+    list_hf_models=True  # Include Hugging Face models
+)
+
+# Deploy a model
+model = model_garden.OpenModel("google/gemma3@gemma-3-1b-it")
+endpoint = model.deploy(accept_eula=True)
+```
+
+### Supported Model Types
+
+Vertex AI Model Garden supports various model architectures:
+
+<Tabs>
+  <Tab title="Language Models">
+    - **Gemma**: Google's lightweight, state-of-the-art open models
+    - **Llama**: Meta's family of large language models
+    - **DeepSeek**: Advanced reasoning and instruction models
+    - **Qwen**: Multilingual language models
+    - **Mistral**: Efficient and powerful language models
+  </Tab>
+  <Tab title="Vision Models">
+    - **PaliGemma**: Vision-language models for multimodal tasks
+    - **Stable Diffusion**: Text-to-image generation
+    - **FLUX**: Advanced image generation models
+  </Tab>
+  <Tab title="Specialized Models">
+    - **CodeLlama**: Code generation and understanding
+    - **SQL-focused models**: Database query generation
+    - **Math models**: Mathematical reasoning (MetaMath)
+  </Tab>
+</Tabs>
+
+## Deployment Options
+
+### Vertex AI Endpoints
+
+Deploy models to managed endpoints with automatic scaling:
+
+```python
+endpoint = model.deploy(
+    machine_type="g2-standard-4",
+    accelerator_type="NVIDIA_L4",
+    accelerator_count=1,
+    min_replica_count=1,
+    max_replica_count=5
+)
+```
+
+### Cloud Run
+
+Deploy lightweight models on Cloud Run for serverless inference:
+
+- Pay only for actual usage
+- Automatic scaling to zero
+- Integrated with Cloud Load Balancing
+
+### GKE (Google Kubernetes Engine)
+
+Deploy models on GKE for advanced orchestration:
+
+- Full control over infrastructure
+- Custom autoscaling policies
+- Multi-region deployments
+
+## Integration with Google Cloud Services
+
+<Steps>
+  <Step title="BigQuery ML">
+    Use open models directly in BigQuery for SQL-based inference:
+    
+    ```sql
+    SELECT ml_generate_text_llm_result
+    FROM ML.GENERATE_TEXT(
+      MODEL `project.dataset.llama_model`,
+      (SELECT "Explain quantum computing" AS prompt)
+    )
+    ```
+  </Step>
+  <Step title="Vertex AI Pipelines">
+    Orchestrate model training, evaluation, and deployment workflows
+  </Step>
+  <Step title="Cloud Storage">
+    Store model artifacts, training data, and inference results
+  </Step>
+  <Step title="Vertex AI Experiments">
+    Track fine-tuning experiments and compare model performance
+  </Step>
+</Steps>
+
+## Model Access and Authentication
+
+### Gated Models
+
+Some models require accepting terms or providing authentication:
+
+<CodeGroup>
+```python EULA Acceptance
+# Accept End User License Agreement
+endpoint = model.deploy(accept_eula=True)
+```
+
+```python Hugging Face Token
+# Provide Hugging Face access token for gated models
+endpoint = model.deploy(
+    hugging_face_access_token="hf_your_token_here"
+)
+```
+</CodeGroup>
+
+### Organization Policies
+
+Control which models can be deployed in your organization:
+
+```bash
+# Set allowed models policy
+gcloud org-policies set-policy policy.yaml
+```
+
+<Note>
+Contact your organization administrator if you encounter policy constraint violations when deploying models.
+</Note>
+
+## Inference APIs
+
+Vertex AI provides multiple APIs for model inference:
+
+<Tabs>
+  <Tab title="Vertex AI SDK">
+    ```python
+    prediction = endpoint.predict(
+        instances=[{
+            "prompt": "Tell me a joke",
+            "temperature": 0.7,
+            "max_tokens": 50
+        }]
+    )
+    print(prediction.predictions[0])
+    ```
+  </Tab>
+  <Tab title="OpenAI-Compatible API">
+    ```python
+    import openai
+    
+    client = openai.OpenAI(
+        base_url=endpoint_url,
+        api_key=auth_token
+    )
+    
+    response = client.chat.completions.create(
+        model="",
+        messages=[{"role": "user", "content": "Tell me a joke"}],
+        temperature=0.7,
+        max_tokens=50
+    )
+    ```
+  </Tab>
+  <Tab title="REST API">
+    ```bash
+    curl -X POST \
+      -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+      -H "Content-Type: application/json" \
+      https://LOCATION-aiplatform.googleapis.com/v1/projects/PROJECT_ID/locations/LOCATION/endpoints/ENDPOINT_ID:predict \
+      -d '{"instances": [{"prompt": "Tell me a joke"}]}'
+    ```
+  </Tab>
+</Tabs>
+
+## Cost Optimization
+
+### Compute Options
+
+<CardGroup cols={2}>
+  <Card title="Standard VMs" icon="server">
+    Predictable pricing for steady workloads
+  </Card>
+  <Card title="Spot VMs" icon="dollar-sign">
+    Up to 80% cost savings for fault-tolerant workloads
+  </Card>
+  <Card title="Reserved Resources" icon="calendar">
+    Committed use discounts for long-running deployments
+  </Card>
+  <Card title="Autoscaling" icon="chart-line">
+    Scale replicas based on traffic patterns
+  </Card>
+</CardGroup>
+
+### GPU Selection
+
+Choose the right GPU for your workload:
+
+| GPU Type | Best For | Memory |
+|----------|----------|--------|
+| NVIDIA L4 | Cost-effective inference | 24 GB |
+| NVIDIA T4 | Balanced workloads | 16 GB |
+| NVIDIA A100 | Training & large models | 40-80 GB |
+| NVIDIA H100 | Highest performance | 80 GB |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Explore Model Garden" icon="compass" href="/advanced/open-models/model-garden">
+    Browse and deploy models from the catalog
+  </Card>
+  <Card title="Fine-Tune Models" icon="wrench" href="/advanced/open-models/fine-tuning">
+    Customize models for your use cases
+  </Card>
+  <Card title="Optimize Serving" icon="gauge-high" href="/advanced/open-models/serving">
+    Learn about inference optimization techniques
+  </Card>
+  <Card title="View Examples" icon="code" href="https://github.com/GoogleCloudPlatform/generative-ai/tree/main/open-models">
+    Explore example notebooks on GitHub
+  </Card>
+</CardGroup>

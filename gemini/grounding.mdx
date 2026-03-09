@@ -1,0 +1,535 @@
+---
+title: Grounding with Google Search and Data
+description: Ground Gemini responses in real-time data using Google Search, Vertex AI Search, or Google Maps
+---
+
+# Grounding
+
+Grounding enables Gemini to generate responses anchored in specific, verifiable information from external data sources. This reduces hallucinations and provides up-to-date, factual responses with citations.
+
+## Why Ground Your Responses?
+
+<CardGroup cols={3}>
+  <Card title="Reduce Hallucinations" icon="shield-check">
+    Anchor responses in verified data sources
+  </Card>
+  
+  <Card title="Real-time Information" icon="clock">
+    Access current data beyond training cutoff
+  </Card>
+  
+  <Card title="Verifiable Citations" icon="link">
+    Provide sources for transparency and trust
+  </Card>
+</CardGroup>
+
+## Grounding Sources
+
+Vertex AI supports multiple grounding sources:
+
+1. **Google Search**: Public web results with citations
+2. **Enterprise Web Search**: Compliant web search without logging
+3. **Vertex AI Search**: Your custom data stores
+4. **Google Maps**: Location and business data
+
+## Google Search Grounding
+
+### Basic Example
+
+Ground responses in Google Search results:
+
+```python
+from google import genai
+from google.genai.types import Tool, GoogleSearch, GenerateContentConfig
+
+client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+
+google_search_tool = Tool(google_search=GoogleSearch())
+
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents="Who won the 2024 UEFA European Championship?",
+    config=GenerateContentConfig(
+        tools=[google_search_tool]
+    )
+)
+
+print(response.text)
+```
+
+### View Grounding Metadata
+
+Access search queries and citations:
+
+```python
+candidate = response.candidates[0]
+metadata = candidate.grounding_metadata
+
+# View search queries used
+print(f"Search queries: {metadata.web_search_queries}")
+
+# View grounding sources
+for chunk in metadata.grounding_chunks:
+    if chunk.web:
+        print(f"Title: {chunk.web.title}")
+        print(f"URL: {chunk.web.uri}")
+```
+
+### Helper Function for Citations
+
+Display responses with inline citations:
+
+```python
+from google.genai.types import GenerateContentResponse
+from IPython.display import Markdown, display
+
+def print_grounding_data(response: GenerateContentResponse) -> None:
+    """Print response with grounding citations in Markdown."""
+    candidate = response.candidates[0] if response.candidates else None
+    metadata = getattr(candidate, "grounding_metadata", None)
+    
+    if not metadata:
+        display(Markdown(response.text))
+        return
+    
+    ENCODING = "utf-8"
+    text_bytes = response.text.encode(ENCODING)
+    parts = []
+    last = 0
+    
+    # Insert citation markers
+    for support in metadata.grounding_supports or []:
+        end = support.segment.end_index
+        parts.append(text_bytes[last:end].decode(ENCODING))
+        parts.append(" " + "".join(f"[{i + 1}]" for i in support.grounding_chunk_indices))
+        last = end
+    
+    parts.append(text_bytes[last:].decode(ENCODING))
+    parts.append("\n\n----\n## Sources\n")
+    
+    # List sources
+    if chunks := metadata.grounding_chunks:
+        for i, chunk in enumerate(chunks, 1):
+            if ctx := chunk.web:
+                uri = ctx.uri.replace(" ", "%20")
+                parts.append(f"{i}. [{ctx.title}]({uri})\n")
+    
+    display(Markdown("".join(parts)))
+
+# Use the helper
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents="What happened at the 2024 Olympics?",
+    config=GenerateContentConfig(tools=[google_search_tool])
+)
+
+print_grounding_data(response)
+```
+
+### Multimodal Grounding
+
+Ground multimodal queries:
+
+```python
+from google.genai.types import Part
+
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents=[
+        Part.from_uri(
+            file_uri="gs://path/to/paris.jpg",
+            mime_type="image/jpeg"
+        ),
+        "What is the current temperature at this location?"
+    ],
+    config=GenerateContentConfig(
+        tools=[google_search_tool]
+    )
+)
+
+print_grounding_data(response)
+```
+
+## Enterprise Web Search
+
+For compliance-sensitive applications, use Enterprise Web Search:
+
+```python
+from google.genai.types import Tool, EnterpriseWebSearch
+
+enterprise_search_tool = Tool(
+    enterprise_web_search=EnterpriseWebSearch()
+)
+
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents="Latest AI research findings",
+    config=GenerateContentConfig(
+        tools=[enterprise_search_tool]
+    )
+)
+
+print_grounding_data(response)
+```
+
+<Note>
+**Key Differences:**
+- No customer query logging
+- VPC Service Controls support
+- Multi-region processing (US/EU)
+- Same citation format as Google Search
+</Note>
+
+## Google Maps Grounding
+
+Ground responses in Google Maps location data:
+
+```python
+from google.genai.types import (
+    Tool,
+    GoogleMaps,
+    ToolConfig,
+    RetrievalConfig,
+    LatLng
+)
+
+google_maps_tool = Tool(google_maps=GoogleMaps())
+
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents="Recommend some good vegetarian restaurants in Las Vegas.",
+    config=GenerateContentConfig(
+        system_instruction="You are a helpful assistant with access to map data.",
+        tools=[google_maps_tool],
+        tool_config=ToolConfig(
+            retrieval_config=RetrievalConfig(
+                lat_lng=LatLng(
+                    latitude=36.1699,
+                    longitude=-115.1398
+                )
+            )
+        )
+    )
+)
+
+print_grounding_data(response)
+```
+
+### Maps Grounding Metadata
+
+Access place IDs and location details:
+
+```python
+for chunk in response.candidates[0].grounding_metadata.grounding_chunks:
+    if chunk.maps:
+        print(f"Place: {chunk.maps.title}")
+        print(f"Place ID: {chunk.maps.place_id}")
+        print(f"Address: {chunk.maps.text}")
+```
+
+## Vertex AI Search Grounding
+
+### Create a Data Store
+
+First, create a Vertex AI Search data store with your custom data:
+
+<Steps>
+  <Step title="Enable APIs">
+    Enable the [Vertex AI Search API](https://console.cloud.google.com/flows/enableapi?apiid=discoveryengine.googleapis.com)
+  </Step>
+  
+  <Step title="Create Data Store">
+    Create a data store with unstructured data from Cloud Storage:
+    
+    - Go to [Vertex AI Search console](https://console.cloud.google.com/gen-app-builder/engines)
+    - Click "Create Data Store"
+    - Choose "Unstructured documents"
+    - Point to your GCS bucket: `gs://your-bucket/documents/`
+  </Step>
+  
+  <Step title="Create Search App">
+    Create a search app and enable **Enterprise edition features**
+  </Step>
+  
+  <Step title="Wait for Indexing">
+    Wait for data ingestion to complete (may take several minutes)
+  </Step>
+</Steps>
+
+### Use Your Data Store
+
+```python
+from google.genai.types import Tool, Retrieval, VertexAISearch
+
+# Configure data store
+VERTEX_AI_SEARCH_APP_ID = "your-app-id"
+VERTEX_AI_SEARCH_ENGINE = (
+    f"projects/{PROJECT_ID}/locations/global/"
+    f"collections/default_collection/engines/{VERTEX_AI_SEARCH_APP_ID}"
+)
+
+vertex_ai_search_tool = Tool(
+    retrieval=Retrieval(
+        vertex_ai_search=VertexAISearch(
+            engine=VERTEX_AI_SEARCH_ENGINE
+        )
+    )
+)
+
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents="What is the company culture like?",
+    config=GenerateContentConfig(
+        tools=[vertex_ai_search_tool]
+    )
+)
+
+print_grounding_data(response)
+```
+
+### Private Data Example
+
+Query internal documents:
+
+```python
+# Example: Internal HR documents
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents="How do I book business travel?",
+    config=GenerateContentConfig(
+        tools=[vertex_ai_search_tool]
+    )
+)
+
+print(response.text)
+
+# View source documents
+for chunk in response.candidates[0].grounding_metadata.grounding_chunks:
+    if chunk.retrieved_context:
+        print(f"Document: {chunk.retrieved_context.title}")
+        print(f"URI: {chunk.retrieved_context.uri}")
+```
+
+## Grounding in Chat
+
+### Google Search Chat
+
+Maintain grounded conversations:
+
+```python
+chat = client.chats.create(
+    model="gemini-3-flash-preview",
+    config=GenerateContentConfig(
+        tools=[Tool(google_search=GoogleSearch())]
+    )
+)
+
+# First question
+response = chat.send_message("What are managed datasets in Vertex AI?")
+print_grounding_data(response)
+
+# Follow-up with context
+response = chat.send_message("What types of data can I use?")
+print_grounding_data(response)
+```
+
+### Vertex AI Search Chat
+
+Chat with custom data:
+
+```python
+chat = client.chats.create(
+    model="gemini-3-flash-preview",
+    config=GenerateContentConfig(
+        tools=[vertex_ai_search_tool]
+    )
+)
+
+response = chat.send_message("How do I request time off?")
+print_grounding_data(response)
+
+response = chat.send_message("What's the approval process?")
+print_grounding_data(response)
+```
+
+## Combined Grounding
+
+Use multiple grounding sources:
+
+```python
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents="Compare public AI research with our internal guidelines",
+    config=GenerateContentConfig(
+        tools=[
+            Tool(google_search=GoogleSearch()),
+            vertex_ai_search_tool
+        ]
+    )
+)
+```
+
+## Search Entry Points
+
+For production applications, add a Search Entry Point:
+
+```python
+metadata = response.candidates[0].grounding_metadata
+
+if metadata.search_entry_point:
+    print("Search Entry Point:")
+    print(metadata.search_entry_point.rendered_content)
+```
+
+<Warning>
+When using Google Search grounding in production, you must display the Search Entry Point to comply with Google Search terms of service. See [documentation](https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/grounding-search-entry-points).
+</Warning>
+
+## Grounding Configuration
+
+Fine-tune grounding behavior:
+
+```python
+from google.genai.types import (
+    ToolConfig,
+    FunctionCallingConfig,
+    FunctionCallingConfigMode
+)
+
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents="Your query",
+    config=GenerateContentConfig(
+        tools=[google_search_tool],
+        tool_config=ToolConfig(
+            function_calling_config=FunctionCallingConfig(
+                mode=FunctionCallingConfigMode.ANY  # Force grounding
+            )
+        )
+    )
+)
+```
+
+## Response Filtering
+
+Check grounding confidence:
+
+```python
+candidate = response.candidates[0]
+metadata = candidate.grounding_metadata
+
+# Check if response is grounded
+if metadata and metadata.grounding_chunks:
+    print(f"Found {len(metadata.grounding_chunks)} sources")
+    
+    # Check support for each statement
+    for support in metadata.grounding_supports:
+        confidence = support.confidence_scores[0] if support.confidence_scores else 0
+        if confidence > 0.8:
+            print(f"High confidence: {support.segment.text[:100]}...")
+else:
+    print("Warning: Response not grounded in sources")
+```
+
+## Comparison: Ungrounded vs Grounded
+
+<Tabs>
+  <Tab title="Without Grounding">
+    ```python
+    response = client.models.generate_content(
+        model="gemini-3-flash-preview",
+        contents="What is today's date?"
+    )
+    print(response.text)
+    ```
+    
+    **Result:** "I'm a large language model, I don't have access to real-time information."
+  </Tab>
+  
+  <Tab title="With Grounding">
+    ```python
+    response = client.models.generate_content(
+        model="gemini-3-flash-preview",
+        contents="What is today's date?",
+        config=GenerateContentConfig(
+            tools=[Tool(google_search=GoogleSearch())]
+        )
+    )
+    print_grounding_data(response)
+    ```
+    
+    **Result:** "Today is March 9, 2026. [1][2]"
+    
+    **Sources:**
+    1. [WorldClock.com](https://worldclock.com)
+    2. [TimeAndDate.com](https://timeanddate.com)
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Clear Queries" icon="magnifying-glass">
+    Write specific, focused queries for better grounding
+  </Card>
+  
+  <Card title="Verify Sources" icon="check-double">
+    Always check grounding metadata for source quality
+  </Card>
+  
+  <Card title="Handle Missing Data" icon="database">
+    Gracefully handle cases with no grounding results
+  </Card>
+  
+  <Card title="Update Data Stores" icon="arrows-rotate">
+    Keep Vertex AI Search data stores current
+  </Card>
+</CardGroup>
+
+## Error Handling
+
+```python
+try:
+    response = client.models.generate_content(
+        model="gemini-3-flash-preview",
+        contents="Your query",
+        config=GenerateContentConfig(
+            tools=[google_search_tool]
+        )
+    )
+    
+    if not response.candidates[0].grounding_metadata:
+        print("Warning: No grounding data available")
+    else:
+        print_grounding_data(response)
+        
+except Exception as e:
+    print(f"Grounding error: {e}")
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Function Calling" icon="function" href="/gemini/function-calling">
+    Combine grounding with function calls
+  </Card>
+  
+  <Card title="Context Caching" icon="database" href="/gemini/context-caching">
+    Cache grounded data for efficiency
+  </Card>
+  
+  <Card title="Multimodal" icon="images" href="/gemini/multimodal">
+    Ground multimodal queries
+  </Card>
+  
+  <Card title="Batch Prediction" icon="layer-group" href="/gemini/batch-prediction">
+    Process grounded queries at scale
+  </Card>
+</CardGroup>
+
+## Resources
+
+- [Grounding Overview](https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/ground-gemini)
+- [Vertex AI Search](https://cloud.google.com/generative-ai-app-builder/docs/enterprise-search-introduction)
+- [Search Entry Points](https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/grounding-search-entry-points)
+- [Google Maps Grounding](https://cloud.google.com/vertex-ai/generative-ai/docs/grounding/grounding-with-google-maps)

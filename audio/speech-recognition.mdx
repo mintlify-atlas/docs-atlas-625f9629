@@ -1,0 +1,622 @@
+---
+title: "Speech Recognition with Chirp 3"
+description: "Learn how to transcribe audio to text using Chirp 3, Google Cloud's Universal Speech Model with support for multilingual transcription, speaker diarization, and streaming recognition"
+---
+
+## Introduction
+
+Chirp 3 is Google's latest speech recognition model that converts spoken audio into text with high accuracy across multiple languages. Built on the Universal Speech Model (USM) architecture, Chirp 3 offers advanced features like automatic language detection, speaker diarization, and real-time streaming transcription.
+
+## Prerequisites
+
+<Steps>
+  <Step title="Enable the API">
+    Enable the [Speech-to-Text API](https://console.cloud.google.com/flows/enableapi?apiid=speech.googleapis.com) in your Google Cloud project.
+  </Step>
+  
+  <Step title="Install the SDK">
+    Install the Google Cloud Speech client library:
+    
+    ```bash
+    pip install --upgrade google-cloud-speech
+    ```
+  </Step>
+  
+  <Step title="Set up authentication">
+    Configure your environment with Application Default Credentials:
+    
+    ```bash
+    gcloud auth application-default login
+    gcloud config set project YOUR_PROJECT_ID
+    ```
+  </Step>
+</Steps>
+
+## Regional Availability
+
+<Note>
+Chirp 3 is available in specific regions. Use one of the following regional endpoints:
+- `us-speech.googleapis.com` (United States)
+- `eu-speech.googleapis.com` (Europe)
+- `asia-speech.googleapis.com` (Asia)
+
+See the [regional availability documentation](https://cloud.google.com/speech-to-text/v2/docs/chirp_3-model#regional_availability) for the complete list.
+</Note>
+
+## Basic Synchronous Recognition
+
+For audio files **less than 1 minute**, use synchronous (online) speech recognition.
+
+### Setup Client
+
+First, initialize the Speech client with the appropriate regional endpoint:
+
+```python
+from google.api_core.client_options import ClientOptions
+from google.cloud.speech_v2 import SpeechClient
+from google.cloud.speech_v2.types import cloud_speech
+
+# Initialize client with regional endpoint
+STT_LOCATION = "us"  # or "eu", "asia"
+client = SpeechClient(
+    client_options=ClientOptions(
+        api_endpoint=f"{STT_LOCATION}-speech.googleapis.com"
+    )
+)
+
+# Set up recognizer path
+PROJECT_ID = "your-project-id"
+recognizer = client.recognizer_path(PROJECT_ID, STT_LOCATION, "_")
+model = "chirp_3"
+```
+
+### Transcribe Audio File
+
+Transcribe a local audio file:
+
+```python
+# Configure recognition
+config = cloud_speech.RecognitionConfig(
+    auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
+    model=model,
+    language_codes=["en-US"],
+)
+
+# Read audio file
+with open("audio.mp3", "rb") as f:
+    audio_content = f.read()
+
+# Create request
+request = cloud_speech.RecognizeRequest(
+    recognizer=recognizer,
+    config=config,
+    content=audio_content,
+)
+
+# Get transcription
+response = client.recognize(request=request)
+
+# Print transcript
+for result in response.results:
+    print(result.alternatives[0].transcript)
+```
+
+### Transcribe from Cloud Storage
+
+For files stored in Google Cloud Storage:
+
+```python
+# GCS URI
+audio_gcs_uri = "gs://your-bucket/audio.mp3"
+
+# Configure recognition
+config = cloud_speech.RecognitionConfig(
+    auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
+    model=model,
+    language_codes=["en-US"],
+)
+
+# Create request with URI
+request = cloud_speech.RecognizeRequest(
+    recognizer=recognizer,
+    config=config,
+    uri=audio_gcs_uri,
+)
+
+# Get transcription
+response = client.recognize(request=request)
+for result in response.results:
+    print(result.alternatives[0].transcript)
+```
+
+<Note>
+The `auto_decoding_config` parameter automatically detects the audio encoding format (MP3, WAV, FLAC, etc.), eliminating the need to specify encoding manually.
+</Note>
+
+## Language-Agnostic Transcription
+
+Chirp 3 can automatically detect and transcribe the dominant language in audio without prior specification.
+
+### Automatic Language Detection
+
+Set `language_codes=["auto"]` to enable automatic language detection:
+
+```python
+config = cloud_speech.RecognitionConfig(
+    auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
+    model=model,
+    language_codes=["auto"],  # Automatic language detection
+)
+
+request = cloud_speech.RecognizeRequest(
+    recognizer=recognizer,
+    config=config,
+    uri="gs://your-bucket/spanish-audio.wav",
+)
+
+response = client.recognize(request=request)
+for result in response.results:
+    print(f"Transcript: {result.alternatives[0].transcript}")
+    print(f"Language: {result.language_code}")
+```
+
+### Supported Languages
+
+Chirp 3 supports transcription in **100+ languages**. See the [language availability documentation](https://cloud.google.com/speech-to-text/v2/docs/chirp_3-model#language_availability_for_transcription) for the complete list.
+
+<CodeGroup>
+```python English
+language_codes=["en-US"]
+```
+
+```python Spanish
+language_codes=["es-ES"]
+```
+
+```python French
+language_codes=["fr-FR"]
+```
+
+```python Mandarin
+language_codes=["zh-CN"]
+```
+
+```python Japanese
+language_codes=["ja-JP"]
+```
+
+```python Auto-detect
+language_codes=["auto"]
+```
+</CodeGroup>
+
+## Batch Recognition
+
+For audio files **longer than 1 minute**, use batch (asynchronous) recognition with Cloud Storage.
+
+### Basic Batch Transcription
+
+```python
+# Audio file in Cloud Storage
+audio_gcs_uri = "gs://your-bucket/long-audio.mp3"
+
+# Output location for results
+gcs_output_folder = "gs://your-bucket/transcripts/"
+
+# Configure recognition
+config = cloud_speech.RecognitionConfig(
+    auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
+    model=model,
+    language_codes=["en-US"],
+)
+
+# Prepare files for batch processing
+files = [cloud_speech.BatchRecognizeFileMetadata(uri=audio_gcs_uri)]
+
+# Create batch request
+request = cloud_speech.BatchRecognizeRequest(
+    recognizer=recognizer,
+    config=config,
+    files=files,
+    recognition_output_config=cloud_speech.RecognitionOutputConfig(
+        gcs_output_config=cloud_speech.GcsOutputConfig(uri=gcs_output_folder),
+    ),
+)
+
+# Start batch operation
+operation = client.batch_recognize(request=request)
+
+# Wait for completion (can take several minutes for long audio)
+MAX_AUDIO_LENGTH_SECS = 8 * 60 * 60  # 8 hours
+response = operation.result(timeout=MAX_AUDIO_LENGTH_SECS)
+
+# Get transcript location
+transcript_uri = response.results[audio_gcs_uri].uri
+print(f"Transcript saved to: {transcript_uri}")
+```
+
+### Download Batch Results
+
+Batch results are saved as JSON files in Cloud Storage:
+
+```bash
+gsutil cp gs://your-bucket/transcripts/output.json ./transcript.json
+```
+
+## Speaker Diarization
+
+Speaker diarization identifies different speakers in a conversation and labels each word with a speaker tag.
+
+### Enable Diarization
+
+```python
+# Configure recognition with diarization
+config = cloud_speech.RecognitionConfig(
+    auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
+    features=cloud_speech.RecognitionFeatures(
+        diarization_config=cloud_speech.SpeakerDiarizationConfig(),
+    ),
+    model=model,
+    language_codes=["en-US"],
+)
+
+# Use batch recognition for diarization
+files = [cloud_speech.BatchRecognizeFileMetadata(uri=audio_gcs_uri)]
+
+request = cloud_speech.BatchRecognizeRequest(
+    recognizer=recognizer,
+    config=config,
+    files=files,
+    recognition_output_config=cloud_speech.RecognitionOutputConfig(
+        gcs_output_config=cloud_speech.GcsOutputConfig(uri=gcs_output_folder),
+    ),
+)
+
+operation = client.batch_recognize(request=request)
+response = operation.result(timeout=MAX_AUDIO_LENGTH_SECS)
+
+# Download and parse results
+transcript_uri = response.results[audio_gcs_uri].uri
+```
+
+### Parse Diarization Results
+
+Process the diarization output to group words by speaker:
+
+```python
+import json
+import re
+
+def group_utterances_by_speaker(json_file_path: str) -> dict:
+    """Groups transcribed words by speaker."""
+    with open(json_file_path, encoding="utf-8") as f:
+        json_data = f.read()
+    
+    # Extract words array from JSON
+    words_regex = r'"words":\s*(\[.*?\])'
+    match = re.search(words_regex, json_data, re.DOTALL)
+    words_list = json.loads(match.group(1))
+    
+    # Group by speaker
+    dialogue = []
+    current_speaker = words_list[0]["speakerLabel"]
+    current_utterance = []
+    
+    for item in words_list:
+        word = item["word"]
+        speaker = item["speakerLabel"]
+        
+        if speaker != current_speaker:
+            # Speaker changed - save current utterance
+            dialogue.append({
+                "speaker": current_speaker,
+                "text": " ".join(current_utterance)
+            })
+            current_speaker = speaker
+            current_utterance = [word]
+        else:
+            current_utterance.append(word)
+    
+    # Add final utterance
+    if current_speaker:
+        dialogue.append({
+            "speaker": current_speaker,
+            "text": " ".join(current_utterance)
+        })
+    
+    return {"dialogue": dialogue}
+
+# Parse the transcript
+result = group_utterances_by_speaker("transcript.json")
+
+# Print formatted dialogue
+for utterance in result["dialogue"]:
+    print(f"{utterance['speaker']}: {utterance['text']}")
+```
+
+<Note>
+Speaker diarization is available for specific languages. Check the [diarization language availability](https://cloud.google.com/speech-to-text/v2/docs/chirp_3-model#language_availability_for_diarization) documentation.
+</Note>
+
+## Streaming Recognition
+
+Streaming recognition enables real-time transcription of audio as it's being captured.
+
+### Set Up Streaming
+
+```python
+from typing import Generator
+
+CHUNK_SIZE = 3200  # bytes per chunk
+
+# Configure streaming recognition
+recognition_config = cloud_speech.RecognitionConfig(
+    auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
+    language_codes=["auto"],
+    model=model,
+)
+
+def create_streaming_requests(
+    audio_file_path: str,
+) -> Generator[cloud_speech.StreamingRecognizeRequest, None, None]:
+    """Generates streaming requests from audio file."""
+    
+    # First request: configuration
+    streaming_config = cloud_speech.StreamingRecognitionConfig(
+        config=recognition_config
+    )
+    
+    config_request = cloud_speech.StreamingRecognizeRequest(
+        recognizer=recognizer,
+        streaming_config=streaming_config,
+    )
+    yield config_request
+    
+    # Subsequent requests: audio chunks
+    with open(audio_file_path, "rb") as audio_file:
+        audio_content = audio_file.read()
+    
+    # Split audio into chunks
+    for start_index in range(0, len(audio_content), CHUNK_SIZE):
+        end_index = start_index + CHUNK_SIZE
+        chunk = audio_content[start_index:end_index]
+        
+        audio_request = cloud_speech.StreamingRecognizeRequest(
+            audio=chunk
+        )
+        yield audio_request
+```
+
+### Process Streaming Responses
+
+```python
+# Create streaming requests
+requests = create_streaming_requests("recording.mp3")
+
+# Stream recognition
+responses = client.streaming_recognize(requests=requests)
+
+# Process results in real-time
+for response in responses:
+    for result in response.results:
+        if result.is_final:
+            print(f"Final: {result.alternatives[0].transcript}")
+        else:
+            print(f"Interim: {result.alternatives[0].transcript}")
+```
+
+### Live Microphone Input
+
+For capturing audio from a microphone in Colab:
+
+```python
+import sys
+
+# Colab-specific imports
+if "google.colab" in sys.modules:
+    from google.colab import output
+    from ipywebrtc import AudioRecorder, CameraStream
+    
+    output.enable_custom_widget_manager()
+    
+    # Start recording
+    camera = CameraStream(constraints={"audio": True, "video": False})
+    recorder = AudioRecorder(stream=camera)
+    recorder  # Display recorder widget
+```
+
+After recording, process the audio:
+
+```python
+# Save recording
+with open("recording.webm", "wb") as f:
+    f.write(recorder.audio.value)
+
+# Convert to MP3 using FFmpeg
+!ffmpeg -i recording.webm -vn -ar 44100 -ac 2 -f mp3 recording.mp3
+
+# Stream the recorded audio for transcription
+requests = create_streaming_requests("recording.mp3")
+responses = client.streaming_recognize(requests=requests)
+
+for response in responses:
+    for result in response.results:
+        if result.is_final:
+            print(result.alternatives[0].transcript)
+```
+
+## Advanced Features
+
+### Confidence Scores
+
+Access confidence scores for transcription results:
+
+```python
+response = client.recognize(request=request)
+for result in response.results:
+    alternative = result.alternatives[0]
+    print(f"Transcript: {alternative.transcript}")
+    print(f"Confidence: {alternative.confidence:.2%}")
+```
+
+### Word-Level Timestamps
+
+Get timestamps for individual words:
+
+```python
+config = cloud_speech.RecognitionConfig(
+    auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
+    model=model,
+    language_codes=["en-US"],
+    features=cloud_speech.RecognitionFeatures(
+        enable_word_time_offsets=True,
+    ),
+)
+
+response = client.recognize(request=request)
+for result in response.results:
+    alternative = result.alternatives[0]
+    for word_info in alternative.words:
+        word = word_info.word
+        start_time = word_info.start_offset.total_seconds()
+        end_time = word_info.end_offset.total_seconds()
+        print(f"{word}: {start_time:.2f}s - {end_time:.2f}s")
+```
+
+### Profanity Filter
+
+Filter profanity from transcripts:
+
+```python
+config = cloud_speech.RecognitionConfig(
+    auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
+    model=model,
+    language_codes=["en-US"],
+    features=cloud_speech.RecognitionFeatures(
+        profanity_filter=True,
+    ),
+)
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Choose the right recognition mode">
+    - **Synchronous**: Audio < 1 minute
+    - **Batch**: Audio > 1 minute
+    - **Streaming**: Real-time transcription
+  </Step>
+  
+  <Step title="Optimize audio quality">
+    - Use 16 kHz or higher sample rate
+    - Minimize background noise
+    - Use lossless formats (WAV, FLAC) when possible
+  </Step>
+  
+  <Step title="Handle long audio efficiently">
+    - Use batch recognition for files > 1 minute
+    - Store audio in Cloud Storage for faster processing
+    - Set appropriate timeouts for long operations
+  </Step>
+  
+  <Step title="Select the right language settings">
+    - Use specific language codes when known for better accuracy
+    - Use `auto` for multilingual or unknown content
+    - Enable multi-language when audio contains code-switching
+  </Step>
+</Steps>
+
+## Error Handling
+
+Implement robust error handling for production applications:
+
+```python
+from google.api_core import retry, exceptions
+
+try:
+    response = client.recognize(request=request)
+    for result in response.results:
+        print(result.alternatives[0].transcript)
+except exceptions.InvalidArgument as e:
+    print(f"Invalid argument: {e}")
+except exceptions.DeadlineExceeded:
+    print("Request timed out. Try batch recognition for long audio.")
+except exceptions.ResourceExhausted:
+    print("Quota exceeded. Check your API quotas.")
+except Exception as e:
+    print(f"Unexpected error: {e}")
+```
+
+## Pricing and Quotas
+
+<Warning>
+Speech-to-Text API usage is charged based on:
+- Duration of audio processed (per 15-second increments)
+- Model used (Chirp 3 has different pricing than legacy models)
+- Features enabled (diarization, word timestamps, etc.)
+
+See the [pricing documentation](https://cloud.google.com/speech-to-text/pricing) for detailed information.
+</Warning>
+
+### Rate Limits
+
+- **Synchronous recognition**: 480 requests per minute
+- **Streaming recognition**: 1000 concurrent streams
+- **Batch recognition**: 5000 requests per day
+
+Request quota increases through the [Google Cloud Console](https://console.cloud.google.com/iam-admin/quotas).
+
+## Sample Applications
+
+Explore complete sample applications:
+
+- **Live Translator**: Real-time speech translation using Chirp 3 and translation APIs
+- **Podcast Transcription**: Batch transcription with speaker diarization
+- **Voice Assistant**: Streaming recognition for conversational AI
+
+Find these samples in the [GitHub repository](https://github.com/GoogleCloudPlatform/generative-ai/tree/main/audio/speech).
+
+## Troubleshooting
+
+### Common Issues
+
+**Problem**: "Invalid audio encoding"
+- **Solution**: Use `auto_decoding_config` to automatically detect encoding
+
+**Problem**: "Audio too long for synchronous recognition"
+- **Solution**: Switch to batch recognition for audio > 1 minute
+
+**Problem**: "Unsupported language"
+- **Solution**: Check [language availability](https://cloud.google.com/speech-to-text/v2/docs/chirp_3-model#language_availability_for_transcription)
+
+**Problem**: Poor transcription accuracy
+- **Solution**: 
+  - Improve audio quality (reduce noise, increase sample rate)
+  - Use the correct language code
+  - Ensure audio is clear and well-articulated
+
+## Resources
+
+- [Speech-to-Text Documentation](https://cloud.google.com/speech-to-text/docs)
+- [Chirp 3 Model Details](https://cloud.google.com/speech-to-text/v2/docs/chirp_3-model)
+- [API Reference](https://cloud.google.com/speech-to-text/docs/reference/rest)
+- [Client Libraries](https://cloud.google.com/speech-to-text/docs/libraries)
+- [Code Samples](https://github.com/GoogleCloudPlatform/generative-ai/tree/main/audio/speech)
+- [Pricing Calculator](https://cloud.google.com/products/calculator)
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Audio Overview" icon="waveform" href="/audio/overview">
+    Return to audio capabilities overview
+  </Card>
+  <Card title="Text-to-Speech" icon="volume-high" href="https://cloud.google.com/text-to-speech/docs">
+    Explore text-to-speech synthesis
+  </Card>
+  <Card title="Sample Apps" icon="code" href="https://github.com/GoogleCloudPlatform/generative-ai/tree/main/audio/speech/sample-apps">
+    Try complete sample applications
+  </Card>
+  <Card title="API Reference" icon="book" href="https://cloud.google.com/speech-to-text/docs/reference/rest">
+    View complete API reference
+  </Card>
+</CardGroup>

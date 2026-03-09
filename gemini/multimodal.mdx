@@ -1,0 +1,540 @@
+---
+title: Multimodal Understanding
+description: Process text, images, video, audio, and documents with Gemini
+---
+
+# Multimodal Understanding
+
+Gemini models natively support multimodal inputs, allowing you to process text, images, video, audio, and documents in a single API call.
+
+## Supported Modalities
+
+<CardGroup cols={3}>
+  <Card title="Images" icon="image">
+    JPEG, PNG, WEBP, GIF
+  </Card>
+  
+  <Card title="Video" icon="video">
+    MP4, MOV, MPEG, AVI, WebM
+  </Card>
+  
+  <Card title="Audio" icon="microphone">
+    MP3, WAV, FLAC, AAC
+  </Card>
+  
+  <Card title="Documents" icon="file-pdf">
+    PDF documents
+  </Card>
+  
+  <Card title="Web Pages" icon="globe">
+    HTML content via HTTP/HTTPS
+  </Card>
+  
+  <Card title="YouTube" icon="youtube">
+    Direct YouTube video URLs
+  </Card>
+</CardGroup>
+
+## Image Understanding
+
+### From Cloud Storage
+
+Process images stored in Google Cloud Storage:
+
+```python
+from google import genai
+from google.genai.types import Part
+
+client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents=[
+        Part.from_uri(
+            file_uri="gs://cloud-samples-data/generative-ai/image/a-man-and-a-dog.png",
+            mime_type="image/png"
+        ),
+        "Describe this image in detail."
+    ]
+)
+
+print(response.text)
+```
+
+### From Local Files
+
+Load and process images from your local file system:
+
+```python
+with open("path/to/image.jpg", "rb") as f:
+    image_data = f.read()
+
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents=[
+        Part.from_bytes(data=image_data, mime_type="image/jpeg"),
+        "What objects are in this image?"
+    ]
+)
+
+print(response.text)
+```
+
+### From Public URLs
+
+Process images from web URLs:
+
+```python
+import requests
+
+image_url = "https://example.com/image.jpg"
+image_data = requests.get(image_url).content
+
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents=[
+        Part.from_bytes(data=image_data, mime_type="image/jpeg"),
+        "Analyze this image."
+    ]
+)
+```
+
+### Media Resolution Control
+
+Gemini 3 allows fine-grained control over image processing quality:
+
+```python
+from google.genai.types import (
+    Part,
+    FileData,
+    PartMediaResolution,
+    PartMediaResolutionLevel,
+    GenerateContentConfig
+)
+
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents=[
+        Part(
+            file_data=FileData(
+                file_uri="gs://path/to/high-res-image.jpg",
+                mime_type="image/jpeg"
+            ),
+            media_resolution=PartMediaResolution(
+                level=PartMediaResolutionLevel.MEDIA_RESOLUTION_HIGH
+            )
+        ),
+        "Read the small text in this image."
+    ]
+)
+```
+
+<Note>
+Higher resolution settings increase token usage and latency but improve accuracy for fine details and small text.
+</Note>
+
+## Video Understanding
+
+### From Cloud Storage
+
+Process video files with temporal understanding:
+
+```python
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents=[
+        Part.from_uri(
+            file_uri="gs://cloud-samples-data/generative-ai/video/pixel_phone.mp4",
+            mime_type="video/mp4"
+        ),
+        "Summarize the main events in this video."
+    ]
+)
+
+print(response.text)
+```
+
+### YouTube Videos
+
+Analyze YouTube videos directly:
+
+```python
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents=[
+        Part.from_uri(
+            file_uri="https://www.youtube.com/watch?v=3KtWfp0UopM",
+            mime_type="video/mp4"
+        ),
+        "At what timestamp does the product launch occur?"
+    ]
+)
+```
+
+### Multiple Videos
+
+Compare multiple videos in a single request:
+
+```python
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents=[
+        Part.from_uri(
+            file_uri="gs://path/to/video1.mp4",
+            mime_type="video/mp4",
+        ),
+        Part.from_uri(
+            file_uri="gs://path/to/video2.mp4",
+            mime_type="video/mp4",
+        ),
+        "What are the differences between these two videos?"
+    ]
+)
+```
+
+### Video Resolution Control
+
+Optimize processing for different video lengths:
+
+```python
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents=[
+        Part(
+            file_data=FileData(
+                file_uri="gs://path/to/long-video.mp4",
+                mime_type="video/mp4"
+            ),
+            media_resolution=PartMediaResolution(
+                level=PartMediaResolutionLevel.MEDIA_RESOLUTION_LOW
+            )
+        ),
+        "Provide a high-level summary."
+    ],
+    config=GenerateContentConfig(
+        media_resolution=MediaResolution.MEDIA_RESOLUTION_LOW
+    )
+)
+```
+
+## Audio Processing
+
+### Audio Transcription and Analysis
+
+Process audio files with automatic transcription:
+
+```python
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents=[
+        Part.from_uri(
+            file_uri="gs://cloud-samples-data/generative-ai/audio/podcast.mp3",
+            mime_type="audio/mpeg"
+        ),
+        "Transcribe this audio and provide a summary."
+    ]
+)
+
+print(response.text)
+```
+
+### Audio with Timestamps
+
+Get timestamped transcriptions:
+
+```python
+from google.genai.types import GenerateContentConfig
+
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents=[
+        Part.from_uri(
+            file_uri="https://example.com/podcast.mp3",
+            mime_type="audio/mpeg"
+        ),
+        "Transcribe this podcast with timestamps."
+    ],
+    config=GenerateContentConfig(
+        audio_timestamp=True
+    )
+)
+```
+
+### Multiple Audio Files
+
+Compare or combine multiple audio sources:
+
+```python
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents=[
+        Part.from_uri(
+            file_uri="gs://path/to/audio1.wav",
+            mime_type="audio/wav"
+        ),
+        Part.from_uri(
+            file_uri="gs://path/to/audio2.wav",
+            mime_type="audio/wav"
+        ),
+        "Compare the speaking styles in these recordings."
+    ]
+)
+```
+
+## PDF Document Processing
+
+### Research Papers
+
+Analyze academic papers and documents:
+
+```python
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents=[
+        Part.from_uri(
+            file_uri="gs://cloud-samples-data/generative-ai/pdf/2312.11805v3.pdf",
+            mime_type="application/pdf"
+        ),
+        "Summarize the key findings of this research paper."
+    ]
+)
+```
+
+### Multiple Documents
+
+Compare or synthesize information across documents:
+
+```python
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents=[
+        Part.from_uri(
+            file_uri="gs://path/to/paper1.pdf",
+            mime_type="application/pdf"
+        ),
+        Part.from_uri(
+            file_uri="gs://path/to/paper2.pdf",
+            mime_type="application/pdf"
+        ),
+        "What methodology differences exist between these papers?"
+    ]
+)
+```
+
+## Web Page Processing
+
+Analyze web pages directly via HTTP:
+
+```python
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents=[
+        Part.from_uri(
+            file_uri="https://cloud.google.com/vertex-ai/docs",
+            mime_type="text/html"
+        ),
+        "Summarize the key features described on this page."
+    ]
+)
+```
+
+## Mixed Multimodal Inputs
+
+### Images and Text
+
+Combine multiple images with text instructions:
+
+```python
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents=[
+        "Compare these two images and describe the differences:",
+        Part.from_uri(
+            file_uri="gs://path/to/before.jpg",
+            mime_type="image/jpeg"
+        ),
+        "VS",
+        Part.from_uri(
+            file_uri="gs://path/to/after.jpg",
+            mime_type="image/jpeg"
+        )
+    ]
+)
+```
+
+### Video, Image, and Text
+
+Mix different modalities:
+
+```python
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents=[
+        "This is the product image:",
+        Part.from_uri(
+            file_uri="gs://path/to/product.jpg",
+            mime_type="image/jpeg"
+        ),
+        "And this is the demo video:",
+        Part.from_uri(
+            file_uri="gs://path/to/demo.mp4",
+            mime_type="video/mp4"
+        ),
+        "Write a marketing description combining both."
+    ]
+)
+```
+
+## Global Media Resolution
+
+Set default resolution for all media in a request:
+
+```python
+from google.genai.types import GenerateContentConfig, MediaResolution
+
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents=[
+        Part.from_uri(
+            file_uri="gs://path/to/image1.jpg",
+            mime_type="image/jpeg"
+        ),
+        Part.from_uri(
+            file_uri="gs://path/to/image2.jpg",
+            mime_type="image/jpeg"
+        ),
+        "Analyze both images."
+    ],
+    config=GenerateContentConfig(
+        media_resolution=MediaResolution.MEDIA_RESOLUTION_MEDIUM
+    )
+)
+```
+
+## Image + Video Context
+
+Find when an image appears in a video:
+
+```python
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents=[
+        Part(
+            file_data=FileData(
+                file_uri="gs://path/to/reference-image.png",
+                mime_type="image/png"
+            ),
+            media_resolution=PartMediaResolution(
+                level=PartMediaResolutionLevel.MEDIA_RESOLUTION_HIGH
+            )
+        ),
+        Part(
+            file_data=FileData(
+                file_uri="gs://path/to/video.mp4",
+                mime_type="video/mp4"
+            ),
+            media_resolution=PartMediaResolution(
+                level=PartMediaResolutionLevel.MEDIA_RESOLUTION_LOW
+            )
+        ),
+        "At what timestamp does this image appear in the video? What's the context?"
+    ]
+)
+```
+
+## Chat with Multimodal Input
+
+Maintain context across multimodal conversations:
+
+```python
+chat = client.chats.create(
+    model="gemini-3.1-pro-preview"
+)
+
+# First turn with image
+response = chat.send_message([
+    Part.from_uri(
+        file_uri="gs://path/to/chart.png",
+        mime_type="image/png"
+    ),
+    "What does this chart show?"
+])
+print(response.text)
+
+# Follow-up without image (maintains context)
+response = chat.send_message("What were the peak values?")
+print(response.text)
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="File Size Limits" icon="file">
+    Keep individual files under 20MB for optimal performance
+  </Card>
+  
+  <Card title="Resolution Trade-offs" icon="gauge">
+    Use LOW resolution for long videos to fit context limits
+  </Card>
+  
+  <Card title="Cloud Storage" icon="cloud">
+    Use GCS URIs for large files instead of base64 encoding
+  </Card>
+  
+  <Card title="Batch Processing" icon="layer-group">
+    Process multiple similar files in parallel requests
+  </Card>
+</CardGroup>
+
+## Supported MIME Types
+
+### Images
+- `image/png`
+- `image/jpeg`
+- `image/webp`
+- `image/gif`
+
+### Video
+- `video/mp4`
+- `video/mpeg`
+- `video/mov`
+- `video/avi`
+- `video/x-flv`
+- `video/mpg`
+- `video/webm`
+- `video/wmv`
+- `video/3gpp`
+
+### Audio
+- `audio/wav`
+- `audio/mp3`
+- `audio/mpeg`
+- `audio/aiff`
+- `audio/aac`
+- `audio/ogg`
+- `audio/flac`
+
+### Documents
+- `application/pdf`
+- `text/html`
+- `text/plain`
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Function Calling" icon="function" href="/gemini/function-calling">
+    Use multimodal function calling for structured outputs
+  </Card>
+  
+  <Card title="Grounding" icon="anchor" href="/gemini/grounding">
+    Ground multimodal queries in real-time data
+  </Card>
+  
+  <Card title="Context Caching" icon="database" href="/gemini/context-caching">
+    Cache large media files for cost optimization
+  </Card>
+  
+  <Card title="Batch Prediction" icon="layer-group" href="/gemini/batch-prediction">
+    Process large media collections asynchronously
+  </Card>
+</CardGroup>

@@ -1,0 +1,269 @@
+---
+title: 'Audio on Google Cloud'
+description: 'Overview of audio capabilities including speech recognition, text-to-speech synthesis, and music generation with Chirp and Lyria models'
+---
+
+## Introduction
+
+Google Cloud provides comprehensive audio AI capabilities powered by state-of-the-art models for speech recognition, text-to-speech synthesis, and music generation. These services enable you to build sophisticated audio applications with natural-sounding voices, accurate transcription, and high-fidelity music generation.
+
+## Chirp (Universal Speech Model)
+
+Chirp is Google's Universal Speech Model (USM) that powers both speech recognition and text-to-speech capabilities on Google Cloud.
+
+### Speech-to-Text with Chirp 3
+
+Chirp 3 is the latest speech recognition model offering:
+
+- **Multilingual support**: Transcribe audio in multiple languages with high accuracy
+- **Language-agnostic transcription**: Automatically detect and transcribe the dominant language
+- **Speaker diarization**: Identify different speakers in audio conversations
+- **Streaming recognition**: Real-time transcription of audio streams
+- **Batch processing**: Transcribe longer audio files stored in Cloud Storage
+
+### Text-to-Speech with Chirp 3 HD Voices
+
+Chirp 3 HD Voices deliver natural-sounding speech synthesis powered by large language models:
+
+- **High-fidelity audio**: Studio-quality voice output
+- **Natural expressiveness**: Human-like intonation, pauses, and emotional nuance
+- **Multiple voice options**: 8 distinct voices (4 male, 4 female)
+- **31 languages**: Broad language support for global applications
+- **Streaming synthesis**: Generate speech in real-time
+
+<Note>
+Chirp models are available in specific regions. Check the [Speech-to-Text regional availability](https://cloud.google.com/speech-to-text/v2/docs/chirp_3-model#regional_availability) and [Text-to-Speech endpoints](https://cloud.google.com/text-to-speech/docs/endpoints) documentation for details.
+</Note>
+
+## Lyria 2 Music Generation
+
+Lyria 2 is Google's latest music generation model available on Vertex AI, capable of creating high-fidelity audio tracks across various genres.
+
+### Key Capabilities
+
+- **Genre diversity**: Generate music across classical, electronic, rock, jazz, hip hop, pop, and more
+- **Style control**: Create cinematic, ambient, lo-fi, and other stylistic variations
+- **Mood and emotion**: Fine-tune the emotional tone of generated music
+- **Tempo and instrumentation**: Specify tempo, instruments, and musical characteristics
+- **High-quality output**: 30-second WAV audio at 48kHz sample rate
+
+### Use Cases
+
+<CardGroup cols={2}>
+  <Card title="Voice Assistants" icon="microphone">
+    Create conversational AI with natural speech recognition and synthesis
+  </Card>
+  <Card title="Audiobooks" icon="book-open">
+    Generate expressive narration with Chirp HD voices
+  </Card>
+  <Card title="Customer Service" icon="headset">
+    Build IVR systems with speech-to-text and text-to-speech
+  </Card>
+  <Card title="Media Production" icon="music">
+    Generate background music and soundtracks with Lyria 2
+  </Card>
+  <Card title="Accessibility" icon="universal-access">
+    Create audio descriptions and transcription services
+  </Card>
+  <Card title="Language Learning" icon="language">
+    Build pronunciation practice and transcription tools
+  </Card>
+</CardGroup>
+
+## Getting Started
+
+<Steps>
+  <Step title="Enable the APIs">
+    Enable the [Speech-to-Text API](https://console.cloud.google.com/flows/enableapi?apiid=speech.googleapis.com), [Text-to-Speech API](https://console.cloud.google.com/flows/enableapi?apiid=texttospeech.googleapis.com), and [Vertex AI API](https://console.cloud.google.com/flows/enableapi?apiid=aiplatform.googleapis.com) in your Google Cloud project.
+  </Step>
+  
+  <Step title="Set up authentication">
+    Configure authentication using Application Default Credentials:
+    
+    ```bash
+    gcloud auth application-default login
+    gcloud config set project YOUR_PROJECT_ID
+    ```
+  </Step>
+  
+  <Step title="Install client libraries">
+    Install the required Python packages:
+    
+    ```bash
+    pip install google-cloud-speech google-cloud-texttospeech
+    ```
+  </Step>
+  
+  <Step title="Try your first request">
+    Start with speech recognition or text-to-speech synthesis. See the [Speech Recognition](/audio/speech-recognition) guide for detailed examples.
+  </Step>
+</Steps>
+
+## API Comparison
+
+| Feature | Speech-to-Text (Chirp 3) | Text-to-Speech (Chirp 3 HD) | Music Generation (Lyria 2) |
+|---------|-------------------------|----------------------------|---------------------------|
+| **Primary Use** | Audio to text transcription | Text to speech synthesis | Music generation from prompts |
+| **Input Format** | Audio files, streams | Text strings | Text prompts |
+| **Output Format** | JSON with transcription | Audio (MP3, WAV, LINEAR16) | WAV audio (48kHz) |
+| **Real-time Support** | Yes (streaming) | Yes (streaming) | No (30-second clips) |
+| **Language Support** | 100+ languages | 31 languages | Language-agnostic |
+| **Key Features** | Diarization, auto-language detection | Natural intonation, HD voices | Genre control, mood tuning |
+
+## Code Example: Speech Recognition
+
+```python
+from google.api_core.client_options import ClientOptions
+from google.cloud.speech_v2 import SpeechClient
+from google.cloud.speech_v2.types import cloud_speech
+
+# Initialize client
+client = SpeechClient(
+    client_options=ClientOptions(api_endpoint="us-speech.googleapis.com")
+)
+
+# Configure recognition
+config = cloud_speech.RecognitionConfig(
+    auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
+    model="chirp_3",
+    language_codes=["en-US"],
+)
+
+# Read audio file
+with open("audio.mp3", "rb") as f:
+    audio_content = f.read()
+
+# Create request
+request = cloud_speech.RecognizeRequest(
+    recognizer=f"projects/{PROJECT_ID}/locations/us/recognizers/_",
+    config=config,
+    content=audio_content,
+)
+
+# Get transcription
+response = client.recognize(request=request)
+for result in response.results:
+    print(result.alternatives[0].transcript)
+```
+
+## Code Example: Text-to-Speech
+
+```python
+from google.api_core.client_options import ClientOptions
+from google.cloud import texttospeech_v1beta1 as texttospeech
+
+# Initialize client
+client = texttospeech.TextToSpeechClient(
+    client_options=ClientOptions(api_endpoint="texttospeech.googleapis.com")
+)
+
+# Configure synthesis
+voice = texttospeech.VoiceSelectionParams(
+    language_code="en-US",
+    name="en-US-Chirp3-HD-F1",
+)
+
+audio_config = texttospeech.AudioConfig(
+    audio_encoding=texttospeech.AudioEncoding.MP3,
+)
+
+# Create request
+request = texttospeech.SynthesizeSpeechRequest(
+    input=texttospeech.SynthesisInput(text="Hello, world!"),
+    voice=voice,
+    audio_config=audio_config,
+)
+
+# Get audio
+response = client.synthesize_speech(request=request)
+with open("output.mp3", "wb") as f:
+    f.write(response.audio_content)
+```
+
+## Code Example: Music Generation
+
+```python
+import base64
+import google.auth
+import google.auth.transport.requests
+import requests
+
+# Get credentials
+creds, project = google.auth.default()
+auth_req = google.auth.transport.requests.Request()
+creds.refresh(auth_req)
+
+# API endpoint
+endpoint = f"https://us-central1-aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/us-central1/publishers/google/models/lyria-002:predict"
+
+# Create request
+data = {
+    "instances": [{
+        "prompt": "Smooth, atmospheric jazz with mellow brass",
+        "negative_prompt": "fast",
+        "sample_count": 1
+    }],
+    "parameters": {}
+}
+
+headers = {
+    "Authorization": f"Bearer {creds.token}",
+    "Content-Type": "application/json",
+}
+
+# Generate music
+response = requests.post(endpoint, headers=headers, json=data)
+result = response.json()
+
+# Decode audio
+audio_bytes = base64.b64decode(result["predictions"][0]["bytesBase64Encoded"])
+with open("music.wav", "wb") as f:
+    f.write(audio_bytes)
+```
+
+<Warning>
+Music generation with Lyria 2 generates 30-second audio clips. For longer compositions, you'll need to generate multiple clips and combine them using audio editing tools.
+</Warning>
+
+## Best Practices
+
+### Speech Recognition
+
+- Use **batch recognition** for audio files longer than 1 minute
+- Enable **speaker diarization** when you need to identify multiple speakers
+- Set `language_codes=["auto"]` for automatic language detection
+- Use **streaming recognition** for real-time applications like voice assistants
+
+### Text-to-Speech
+
+- Select appropriate **voice variants** based on your use case (formal vs. conversational)
+- Use **SSML tags** for fine-grained control over pronunciation and pacing
+- Enable **streaming synthesis** to reduce latency in real-time applications
+- Consider **audio encoding formats** based on bandwidth and quality requirements
+
+### Music Generation
+
+- Be **specific in prompts**: Include genre, tempo, instruments, and mood
+- Use **negative prompts** to exclude unwanted characteristics
+- Generate **multiple samples** and select the best result
+- Experiment with different **style descriptors** for varied outputs
+
+## Resources
+
+- [Speech-to-Text Documentation](https://cloud.google.com/speech-to-text/docs)
+- [Text-to-Speech Documentation](https://cloud.google.com/text-to-speech/docs)
+- [Vertex AI Music Generation](https://cloud.google.com/vertex-ai/generative-ai/docs/music/generate-music)
+- [Chirp 3 Model Details](https://cloud.google.com/speech-to-text/v2/docs/chirp_3-model)
+- [Chirp 3 HD Voices](https://cloud.google.com/text-to-speech/docs/chirp3-hd)
+- [GitHub Samples Repository](https://github.com/GoogleCloudPlatform/generative-ai)
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Speech Recognition" icon="waveform" href="/audio/speech-recognition">
+    Learn how to transcribe audio with Chirp 3
+  </Card>
+  <Card title="Pricing Information" icon="dollar-sign" href="https://cloud.google.com/speech-to-text/pricing">
+    View pricing for audio APIs
+  </Card>
+</CardGroup>

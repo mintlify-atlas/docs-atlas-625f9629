@@ -1,0 +1,576 @@
+---
+title: 'Marketing'
+description: 'Generate compelling content, create personalized campaigns, and produce marketing assets with AI'
+---
+
+## Overview
+
+Generative AI transforms marketing workflows by automating content creation, personalizing campaigns, and generating visual assets. This guide shows how to use Gemini and Imagen to create marketing materials at scale while maintaining brand consistency.
+
+## Key Capabilities
+
+<CardGroup cols={2}>
+  <Card title="Content Generation" icon="pen-nib">
+    Create ad copy, social media posts, and product descriptions
+  </Card>
+  <Card title="Visual Assets" icon="image">
+    Generate and edit marketing images with Imagen
+  </Card>
+  <Card title="Personalization" icon="user-group">
+    Tailor content for different audiences and platforms
+  </Card>
+  <Card title="Campaign Ideation" icon="lightbulb">
+    Brainstorm creative concepts and messaging
+  </Card>
+  <Card title="Multi-Platform" icon="share-nodes">
+    Adapt content for Facebook, Instagram, LinkedIn, Twitter
+  </Card>
+  <Card title="Brand Consistency" icon="shield-check">
+    Maintain voice and style across all generated content
+  </Card>
+</CardGroup>
+
+## Setup
+
+### Installation
+
+```bash
+pip install google-cloud-aiplatform google-genai
+```
+
+### Initialize Services
+
+```python
+import vertexai
+from google import genai
+from vertexai.preview.vision_models import ImageGenerationModel
+from google.genai.types import GenerateContentConfig, Part
+
+PROJECT_ID = "your-project-id"
+LOCATION = "us-central1"
+
+vertexai.init(project=PROJECT_ID, location=LOCATION)
+
+# Initialize Gemini client
+client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+
+# Initialize Imagen model
+image_model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-001")
+```
+
+## Content Generation
+
+### Product Marketing Content
+
+Generate complete marketing campaigns from product information:
+
+```python
+def generate_marketing_content(
+    product_name: str,
+    product_description: str,
+    product_image_url: str,
+    target_audience: str,
+) -> dict:
+    """Generate comprehensive marketing content for a product."""
+    
+    system_instruction = """
+You are an expert marketing copywriter specializing in compelling,
+conversion-focused content. Create engaging, authentic content that
+resonates with the target audience while highlighting product benefits.
+    """
+    
+    prompt = f"""
+Create marketing content for:
+
+Product: {product_name}
+Description: {product_description}
+Target Audience: {target_audience}
+
+Generate:
+1. Catchy tagline (max 10 words)
+2. Product description for e-commerce (50-75 words)
+3. Short social media caption (20-30 words)
+4. Email subject line
+5. Key selling points (5 bullet points)
+6. Call-to-action suggestions
+    """
+    
+    response = client.models.generate_content(
+        model="gemini-2.5-pro",
+        contents=[
+            prompt,
+            Part.from_uri(file_uri=product_image_url, mime_type="image/jpeg"),
+        ],
+        config=GenerateContentConfig(
+            system_instruction=system_instruction,
+            temperature=0.8,  # Higher creativity for marketing
+        ),
+    )
+    
+    return response.text
+
+# Usage
+content = generate_marketing_content(
+    product_name="EcoBottle Pro",
+    product_description="Insulated stainless steel water bottle with smart temperature tracking",
+    product_image_url="gs://marketing-assets/ecobottle-pro.jpg",
+    target_audience="environmentally-conscious millennials and Gen Z",
+)
+
+print(content)
+```
+
+Output:
+
+```markdown
+# EcoBottle Pro Marketing Content
+
+## Tagline
+"Stay Hydrated. Stay Smart. Stay Sustainable."
+
+## Product Description
+The EcoBottle Pro combines premium insulated construction with intelligent
+temperature monitoring to keep your drinks perfect all day. Crafted from
+durable stainless steel with a leak-proof design, it tracks your hydration
+goals while keeping beverages hot for 12 hours or cold for 24. Eco-friendly,
+technology-enabled, and built to last a lifetime.
+
+## Social Media Caption
+🌍 Hydration meets innovation! The EcoBottle Pro keeps your drinks perfect
+while tracking your wellness goals. Sustainable living, smarter. 💧✨
+
+## Email Subject Line
+"Your Perfect Temperature, Always: Meet EcoBottle Pro 🌡️"
+
+## Key Selling Points
+- Smart temperature tracking via companion app
+- 24-hour cold / 12-hour hot insulation
+- 100% recycled stainless steel construction
+- Leak-proof, dishwasher-safe design
+- Lifetime warranty & plastic-free packaging
+
+## Call-to-Action
+- "Shop EcoBottle Pro"
+- "Start Your Sustainable Journey"
+- "Join the Hydration Revolution"
+```
+
+### Platform-Specific Content
+
+Adapt content for different social media platforms:
+
+```python
+from pydantic import BaseModel
+
+class SocialMediaPost(BaseModel):
+    platform: str
+    caption: str
+    hashtags: list[str]
+    character_count: int
+    best_posting_time: str
+
+class SocialMediaCampaign(BaseModel):
+    facebook: SocialMediaPost
+    instagram: SocialMediaPost
+    linkedin: SocialMediaPost
+    twitter: SocialMediaPost
+
+response = client.models.generate_content(
+    model="gemini-2.0-flash",
+    contents=f"""
+Create social media posts for EcoBottle Pro across all major platforms.
+
+Product: {product_name}
+Key Message: Sustainable hydration with smart technology
+
+Adapt the tone, length, and hashtags for each platform's best practices.
+    """,
+    config=GenerateContentConfig(
+        response_schema=SocialMediaCampaign,
+        response_mime_type="application/json",
+    ),
+)
+
+campaign = response.parsed
+
+for platform in ["facebook", "instagram", "linkedin", "twitter"]:
+    post = getattr(campaign, platform)
+    print(f"\n{post.platform.upper()}:")
+    print(f"Caption: {post.caption}")
+    print(f"Hashtags: {' '.join(post.hashtags)}")
+    print(f"Best time: {post.best_posting_time}")
+```
+
+### Personalization for Different Audiences
+
+```python
+def personalize_content(base_content: str, audience: dict) -> str:
+    """Personalize marketing content for specific audience segments."""
+    
+    prompt = f"""
+Adapt this marketing content for the specified audience:
+
+Original Content:
+{base_content}
+
+Target Audience:
+- Profession: {audience['profession']}
+- Age Group: {audience['age_group']}
+- Interests: {', '.join(audience['interests'])}
+- Pain Points: {', '.join(audience['pain_points'])}
+
+Adjust:
+1. Language and tone
+2. Examples and use cases
+3. Value propositions
+4. Call-to-action
+    """
+    
+    response = client.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=prompt,
+        config=GenerateContentConfig(temperature=0.7),
+    )
+    
+    return response.text
+
+# Example: Same product, different audiences
+audiences = [
+    {
+        "profession": "Software Engineers",
+        "age_group": "25-35",
+        "interests": ["technology", "productivity", "health"],
+        "pain_points": ["staying hydrated during long coding sessions"],
+    },
+    {
+        "profession": "Fitness Trainers",
+        "age_group": "30-45",
+        "interests": ["wellness", "athletics", "coaching"],
+        "pain_points": ["tracking client hydration", "equipment durability"],
+    },
+    {
+        "profession": "College Students",
+        "age_group": "18-22",
+        "interests": ["sustainability", "campus life", "budget-conscious"],
+        "pain_points": ["expensive replacements", "environmental impact"],
+    },
+]
+
+for audience in audiences:
+    personalized = personalize_content(base_content, audience)
+    print(f"\n--- {audience['profession']} ---")
+    print(personalized)
+```
+
+## Visual Asset Generation
+
+### Generate Marketing Images with Imagen
+
+<Note>
+**Allowlisting Required**: Imagen access requires approval. [Request access here](https://docs.google.com/forms/d/1cqt9padvfMgqn23W5FMPTqh7bW1KLkEOsC5G6uC-uuM/viewform).
+</Note>
+
+```python
+from vertexai.preview.vision_models import ImageGenerationModel
+
+def generate_marketing_image(
+    prompt: str,
+    negative_prompt: str = None,
+    aspect_ratio: str = "1:1",
+    number_of_images: int = 4,
+) -> list:
+    """Generate marketing images using Imagen.
+    
+    Args:
+        prompt: Detailed description of desired image
+        negative_prompt: What to avoid in the image
+        aspect_ratio: "1:1", "16:9", "9:16", "4:3"
+        number_of_images: Number of variations (1-4)
+        
+    Returns:
+        List of generated images
+    """
+    model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-001")
+    
+    images = model.generate_images(
+        prompt=prompt,
+        negative_prompt=negative_prompt,
+        number_of_images=number_of_images,
+        aspect_ratio=aspect_ratio,
+        safety_filter_level="block_some",
+        person_generation="allow_adult",
+    )
+    
+    return images.images
+
+# Generate product lifestyle images
+prompt = """
+Professional product photography of a sleek stainless steel water bottle
+on a minimalist desk setup with a laptop, notebook, and succulent plant.
+Natural lighting, modern aesthetic, teal and white color scheme,
+high resolution, e-commerce ready.
+"""
+
+negative_prompt = "cluttered, blurry, low quality, distorted, text, watermark"
+
+images = generate_marketing_image(
+    prompt=prompt,
+    negative_prompt=negative_prompt,
+    aspect_ratio="1:1",
+    number_of_images=4,
+)
+
+# Save images
+for i, image in enumerate(images):
+    image.save(f"marketing_image_{i}.png")
+```
+
+### Image Outpainting for Different Formats
+
+Adapt images to different aspect ratios:
+
+```python
+from vertexai.preview.vision_models import Image
+
+def outpaint_for_platform(
+    base_image_path: str,
+    target_aspect_ratio: str,
+    platform: str,
+) -> Image:
+    """Extend image to fit different platform requirements.
+    
+    Args:
+        base_image_path: Path to original image
+        target_aspect_ratio: "16:9", "9:16", "4:3"
+        platform: "instagram_story", "facebook_cover", "linkedin_post"
+    """
+    model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-001")
+    
+    base_image = Image.load_from_file(base_image_path)
+    
+    # Generate outpainted version
+    outpainted = model.edit_image(
+        base_image=base_image,
+        mask=None,  # No mask = outpainting
+        prompt=f"Extend this product image naturally for {platform} format",
+        edit_mode="outpainting",
+        aspect_ratio=target_aspect_ratio,
+    )
+    
+    return outpainted.images[0]
+
+# Create images for different platforms
+platforms = [
+    ("instagram_story", "9:16"),
+    ("facebook_cover", "16:9"),
+    ("linkedin_post", "1:1"),
+]
+
+for platform, aspect_ratio in platforms:
+    image = outpaint_for_platform(
+        base_image_path="product_square.png",
+        target_aspect_ratio=aspect_ratio,
+        platform=platform,
+    )
+    image.save(f"product_{platform}.png")
+    print(f"Created {platform} image ({aspect_ratio})")
+```
+
+## Campaign Ideation
+
+### Brainstorm Campaign Concepts
+
+```python
+from google.genai.types import GoogleSearch, Tool
+
+def brainstorm_campaign(
+    product: str,
+    goals: list[str],
+    budget_range: str,
+    target_kpis: dict,
+) -> str:
+    """Generate creative campaign ideas with market research."""
+    
+    # Use Google Search for market trends
+    search_tool = Tool(google_search=GoogleSearch())
+    
+    prompt = f"""
+Brainstorm a comprehensive marketing campaign for {product}.
+
+Goals: {', '.join(goals)}
+Budget: {budget_range}
+Target KPIs: {target_kpis}
+
+Research current market trends and provide:
+
+1. Campaign Theme & Concept
+2. Creative Angles (3-5 ideas)
+3. Channel Strategy
+   - Paid advertising
+   - Organic social
+   - Content marketing
+   - Influencer partnerships
+4. Timeline & Milestones
+5. Budget Allocation Recommendations
+6. Expected ROI
+7. Success Metrics
+
+Base recommendations on current market trends and competitor analysis.
+    """
+    
+    response = client.models.generate_content(
+        model="gemini-2.5-pro",
+        contents=prompt,
+        config=GenerateContentConfig(
+            tools=[search_tool],
+            temperature=0.9,  # High creativity
+        ),
+    )
+    
+    return response.text
+
+campaign_brief = brainstorm_campaign(
+    product="EcoBottle Pro",
+    goals=["Brand awareness", "Q4 sales targets", "Email list growth"],
+    budget_range="$50,000 - $75,000",
+    target_kpis={
+        "website_traffic": "+40%",
+        "conversion_rate": "3.5%",
+        "social_engagement": "+200%",
+    },
+)
+
+print(campaign_brief)
+```
+
+### A/B Testing Content Variations
+
+```python
+class ContentVariation(BaseModel):
+    version: str  # "A", "B", "C"
+    headline: str
+    body: str
+    cta: str
+    target_emotion: str
+    hypothesis: str  # Why this might perform well
+
+class ABTestSuite(BaseModel):
+    test_name: str
+    variations: list[ContentVariation]
+    recommended_sample_size: int
+    expected_runtime_days: int
+
+response = client.models.generate_content(
+    model="gemini-2.0-flash",
+    contents="""
+Create 3 distinct ad copy variations for A/B testing EcoBottle Pro.
+
+Variations should test:
+- Emotional appeal (sustainability vs. technology vs. lifestyle)
+- CTA urgency (limited time vs. join community vs. learn more)
+- Headline format (question vs. statement vs. benefit)
+
+Include hypotheses for why each might perform differently.
+    """,
+    config=GenerateContentConfig(
+        response_schema=ABTestSuite,
+        response_mime_type="application/json",
+    ),
+)
+
+test_suite = response.parsed
+
+for variation in test_suite.variations:
+    print(f"\n=== Version {variation.version} ===")
+    print(f"Headline: {variation.headline}")
+    print(f"Body: {variation.body}")
+    print(f"CTA: {variation.cta}")
+    print(f"Emotion: {variation.target_emotion}")
+    print(f"Hypothesis: {variation.hypothesis}")
+```
+
+## Multilingual Marketing
+
+### Localize Content
+
+```python
+def localize_marketing_content(
+    content: str,
+    target_language: str,
+    target_region: str,
+) -> str:
+    """Localize marketing content with cultural adaptation."""
+    
+    prompt = f"""
+Localize this marketing content for {target_region} in {target_language}.
+
+Original Content:
+{content}
+
+Requirements:
+1. Translate accurately while maintaining marketing impact
+2. Adapt idioms and cultural references appropriately
+3. Adjust for local market preferences
+4. Maintain brand voice
+5. Optimize for local SEO keywords
+
+Provide both the localized content and notes on cultural adaptations made.
+    """
+    
+    response = client.models.generate_content(
+        model="gemini-2.5-pro",
+        contents=prompt,
+    )
+    
+    return response.text
+
+# Localize for multiple markets
+markets = [
+    ("Spanish", "Latin America"),
+    ("Japanese", "Japan"),
+    ("German", "Germany"),
+]
+
+for language, region in markets:
+    localized = localize_marketing_content(
+        content=base_marketing_content,
+        target_language=language,
+        target_region=region,
+    )
+    print(f"\n--- {region} ({language}) ---")
+    print(localized)
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Define Brand Guidelines">
+    Provide clear voice, tone, and style instructions in system prompts
+  </Step>
+  <Step title="Use Higher Temperature">
+    Set temperature to 0.7-0.9 for creative marketing content
+  </Step>
+  <Step title="Iterate and Refine">
+    Generate multiple variations and select the best performers
+  </Step>
+  <Step title="Incorporate Feedback">
+    Use A/B test results to improve future prompts
+  </Step>
+  <Step title="Maintain Human Review">
+    Have marketing professionals review AI-generated content
+  </Step>
+  <Step title="Track Performance">
+    Monitor engagement metrics to optimize generation strategies
+  </Step>
+</Steps>
+
+## Related Resources
+
+- [Imagen Documentation](https://cloud.google.com/vertex-ai/docs/generative-ai/image/overview)
+- [Multimodal Prompting](/features/multimodal)
+- [Google Search Grounding](/features/grounding)
+- [Structured Output](/features/structured-output)
+
+<Note>
+AI-generated content should align with your brand guidelines and be reviewed before publication. Always comply with advertising regulations and platform policies.
+</Note>

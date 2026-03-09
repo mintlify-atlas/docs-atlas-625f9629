@@ -1,122 +1,171 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Generative AI on Google Cloud",
+  "theme": "palm",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#f3871a",
+    "light": "#35a953",
+    "dark": "#4483f3"
   },
-  "favicon": "/favicon.svg",
+  "favicon": "https://media.brand.dev/4f9ff09b-6e5b-4a1e-bda7-b48772796496.png",
+  "logo": {
+    "light": "https://media.brand.dev/ffd6fe59-45c2-4716-b582-c231cb0d94bc.svg",
+    "dark": "https://media.brand.dev/ffd6fe59-45c2-4716-b582-c231cb0d94bc.svg"
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/GoogleCloudPlatform/generative-ai"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/GoogleCloudPlatform/generative-ai"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Getting Started",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "setup",
+              "quickstart"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Gemini Models",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "gemini/overview",
+              "gemini/getting-started",
+              "gemini/multimodal",
+              "gemini/function-calling",
+              "gemini/grounding",
+              "gemini/context-caching",
+              "gemini/code-execution",
+              "gemini/batch-prediction"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Agents",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "agents/overview",
+              "agents/agent-engine",
+              "agents/adk",
+              "agents/data-analytics"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "RAG & Search",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "rag/overview",
+              "rag/rag-engine",
+              "rag/vertex-ai-search",
+              "rag/grounding-techniques"
+            ]
+          },
+          {
+            "group": "Embeddings & Vector Search",
+            "pages": [
+              "embeddings/overview",
+              "embeddings/text-embeddings",
+              "embeddings/multimodal-embeddings",
+              "embeddings/vector-search",
+              "embeddings/hybrid-search"
+            ]
+          },
+          {
+            "group": "Vision",
+            "pages": [
+              "vision/overview",
+              "vision/image-generation",
+              "vision/image-editing",
+              "vision/visual-qa"
+            ]
+          },
+          {
+            "group": "Audio",
+            "pages": [
+              "audio/overview",
+              "audio/speech-recognition"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "Use Cases",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Enterprise Applications",
             "pages": [
-              "api-reference/introduction"
+              "use-cases/overview",
+              "use-cases/document-processing",
+              "use-cases/customer-support",
+              "use-cases/code-generation",
+              "use-cases/data-analytics"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Industry Solutions",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "use-cases/education",
+              "use-cases/healthcare",
+              "use-cases/marketing",
+              "use-cases/finance"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Advanced",
+        "groups": [
+          {
+            "group": "Evaluation & Testing",
+            "pages": [
+              "advanced/evaluation/overview",
+              "advanced/evaluation/gen-ai-eval",
+              "advanced/evaluation/agent-evaluation",
+              "advanced/evaluation/model-migration"
+            ]
+          },
+          {
+            "group": "Production Deployment",
+            "pages": [
+              "advanced/orchestration",
+              "advanced/reasoning-engine",
+              "advanced/model-optimizer",
+              "advanced/responsible-ai"
+            ]
+          },
+          {
+            "group": "Open Models",
+            "pages": [
+              "advanced/open-models/overview",
+              "advanced/open-models/model-garden",
+              "advanced/open-models/fine-tuning",
+              "advanced/open-models/serving"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Sample Apps",
+        "groups": [
+          {
+            "group": "Applications",
+            "pages": [
+              "sample-apps/overview",
+              "sample-apps/genwealth",
+              "sample-apps/fixmycar",
+              "sample-apps/finance-advisor",
+              "sample-apps/live-telephony"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

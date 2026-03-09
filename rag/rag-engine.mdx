@@ -1,0 +1,386 @@
+---
+title: RAG Engine on Vertex AI
+description: Build scalable and modular RAG systems using Vertex AI RAG Engine with flexible backend options
+---
+
+## Overview
+
+[RAG Engine on Vertex AI](https://cloud.google.com/vertex-ai/generative-ai/docs/rag-overview) is a managed data framework for developing context-augmented large language model (LLM) applications. It implements retrieval-augmented generation (RAG) by orchestrating the entire pipeline from data ingestion to generation.
+
+<Note>
+RAG Engine is currently available in specific regions. See [supported regions](https://cloud.google.com/vertex-ai/generative-ai/docs/rag-engine/rag-overview#supported-regions) for availability.
+</Note>
+
+## Key Benefits
+
+<CardGroup cols={2}>
+  <Card title="Managed Infrastructure" icon="server">
+    Fully managed service handles scaling, indexing, and infrastructure management
+  </Card>
+  
+  <Card title="Flexible Backends" icon="puzzle-piece">
+    Choose from multiple vector database options including Vertex AI Vector Search, Feature Store, Pinecone, and Weaviate
+  </Card>
+  
+  <Card title="Simple API" icon="code">
+    Easy-to-use Python SDK for creating corpora, uploading files, and generating responses
+  </Card>
+  
+  <Card title="Enterprise Ready" icon="shield">
+    Built on Google Cloud infrastructure with security, compliance, and SLA support
+  </Card>
+</CardGroup>
+
+## Getting Started
+
+### Installation
+
+Install the required packages:
+
+```bash
+pip install --upgrade google-cloud-aiplatform google-genai
+```
+
+### Initialize Vertex AI
+
+```python
+import vertexai
+from google import genai
+from vertexai import rag
+
+PROJECT_ID = "your-project-id"
+LOCATION = "us-east1"  # See supported regions
+
+# Initialize Vertex AI
+vertexai.init(project=PROJECT_ID, location=LOCATION)
+client = genai.Client(vertexai=True, project=PROJECT_ID, location="global")
+```
+
+## Creating a RAG Corpus
+
+A RAG corpus is the foundation of your RAG system, containing indexed documents and their embeddings.
+
+### Basic Corpus Creation
+
+```python
+from vertexai import rag
+
+# Define embedding model
+EMBEDDING_MODEL = "publishers/google/models/text-embedding-005"
+
+# Create corpus
+rag_corpus = rag.create_corpus(
+    display_name="my-rag-corpus",
+    backend_config=rag.RagVectorDbConfig(
+        rag_embedding_model_config=rag.RagEmbeddingModelConfig(
+            vertex_prediction_endpoint=rag.VertexPredictionEndpoint(
+                publisher_model=EMBEDDING_MODEL
+            )
+        )
+    ),
+)
+
+print(f"Corpus created: {rag_corpus.name}")
+```
+
+### List Existing Corpora
+
+```python
+# List all corpora in the project
+corpora = rag.list_corpora()
+for corpus in corpora:
+    print(f"Corpus: {corpus.display_name} - {corpus.name}")
+```
+
+## Uploading Files
+
+### Upload Local Files
+
+```python
+# Upload a single file
+rag_file = rag.upload_file(
+    corpus_name=rag_corpus.name,
+    path="/path/to/document.pdf",
+    display_name="Product Documentation",
+)
+
+print(f"File uploaded: {rag_file.name}")
+```
+
+### Import from Google Cloud Storage
+
+```python
+# Import files from GCS
+response = rag.import_files(
+    corpus_name=rag_corpus.name,
+    paths=["gs://your-bucket/documents/*.pdf"],
+    chunk_size=512,  # Customize chunk size
+    chunk_overlap=100,  # Overlap between chunks
+)
+
+print(f"Import completed: {response}")
+```
+
+### Import from Google Drive
+
+```python
+# Import files from Google Drive
+response = rag.import_files(
+    corpus_name=rag_corpus.name,
+    paths=["https://drive.google.com/drive/folders/your-folder-id"],
+    source=rag.DataSource.GOOGLE_DRIVE,
+)
+```
+
+## Generating RAG Responses
+
+### Basic RAG Query
+
+```python
+from google.genai.types import GenerateContentConfig, Tool, Retrieval, VertexRagStore
+from IPython.display import Markdown, display
+
+# Define RAG retrieval tool
+rag_tool = Tool(
+    retrieval=Retrieval(
+        vertex_rag_store=VertexRagStore(
+            rag_resources=[rag_corpus.name],
+            similarity_top_k=3,  # Number of relevant chunks to retrieve
+        )
+    )
+)
+
+# Generate content with RAG
+response = client.models.generate_content(
+    model="gemini-2.0-flash-001",
+    contents="What are the main features of the product?",
+    config=GenerateContentConfig(
+        tools=[rag_tool],
+        temperature=0.2,
+    ),
+)
+
+display(Markdown(response.text))
+```
+
+### Access Retrieved Context
+
+```python
+# View the retrieved chunks used for generation
+for candidate in response.candidates:
+    if hasattr(candidate, "grounding_metadata"):
+        metadata = candidate.grounding_metadata
+        print("Retrieved chunks:")
+        for chunk in metadata.grounding_chunks:
+            if hasattr(chunk, "retrieved_context"):
+                print(f"- {chunk.retrieved_context.title}")
+                print(f"  URI: {chunk.retrieved_context.uri}")
+```
+
+## Backend Options
+
+RAG Engine supports multiple vector database backends:
+
+### Vertex AI Vector Search (Default)
+
+```python
+# Default backend - fully managed by Google
+rag_corpus = rag.create_corpus(
+    display_name="vector-search-corpus",
+    backend_config=rag.RagVectorDbConfig(
+        rag_embedding_model_config=rag.RagEmbeddingModelConfig(
+            vertex_prediction_endpoint=rag.VertexPredictionEndpoint(
+                publisher_model="publishers/google/models/text-embedding-005"
+            )
+        )
+    ),
+)
+```
+
+### Vertex AI Feature Store
+
+```python
+# Use Feature Store as backend
+from vertexai import rag
+
+rag_corpus = rag.create_corpus(
+    display_name="feature-store-corpus",
+    backend_config=rag.RagVectorDbConfig(
+        rag_embedding_model_config=rag.RagEmbeddingModelConfig(
+            vertex_prediction_endpoint=rag.VertexPredictionEndpoint(
+                publisher_model="publishers/google/models/text-embedding-005"
+            )
+        ),
+        vertex_feature_store=rag.VertexFeatureStore(
+            feature_view_resource_name=f"projects/{PROJECT_ID}/locations/{LOCATION}/featureOnlineStores/your-store/featureViews/your-view"
+        ),
+    ),
+)
+```
+
+### Pinecone
+
+```python
+# Use Pinecone as backend
+rag_corpus = rag.create_corpus(
+    display_name="pinecone-corpus",
+    backend_config=rag.RagVectorDbConfig(
+        rag_embedding_model_config=rag.RagEmbeddingModelConfig(
+            vertex_prediction_endpoint=rag.VertexPredictionEndpoint(
+                publisher_model="publishers/google/models/text-embedding-005"
+            )
+        ),
+        pinecone=rag.Pinecone(
+            index_name="your-pinecone-index",
+            api_key="your-pinecone-api-key",
+        ),
+    ),
+)
+```
+
+### Weaviate
+
+```python
+# Use Weaviate as backend
+rag_corpus = rag.create_corpus(
+    display_name="weaviate-corpus",
+    backend_config=rag.RagVectorDbConfig(
+        rag_embedding_model_config=rag.RagEmbeddingModelConfig(
+            vertex_prediction_endpoint=rag.VertexPredictionEndpoint(
+                publisher_model="publishers/google/models/text-embedding-005"
+            )
+        ),
+        weaviate=rag.Weaviate(
+            weaviate_http_endpoint="https://your-weaviate-instance.com",
+            collection_name="your-collection",
+            api_key="your-weaviate-api-key",
+        ),
+    ),
+)
+```
+
+## Integration with Vertex AI Search
+
+RAG Engine can also leverage existing Vertex AI Search datastores:
+
+```python
+from google.genai.types import Tool, Retrieval, VertexAISearch
+
+# Use Vertex AI Search datastore
+search_tool = Tool(
+    retrieval=Retrieval(
+        vertex_ai_search=VertexAISearch(
+            datastore=f"projects/{PROJECT_ID}/locations/global/collections/default_collection/dataStores/your-datastore-id"
+        )
+    )
+)
+
+response = client.models.generate_content(
+    model="gemini-2.0-flash-001",
+    contents="Tell me about recent product updates",
+    config=GenerateContentConfig(tools=[search_tool]),
+)
+```
+
+## Advanced Features
+
+### Custom Chunking Configuration
+
+```python
+# Upload with custom chunking parameters
+rag_file = rag.upload_file(
+    corpus_name=rag_corpus.name,
+    path="document.pdf",
+    display_name="Custom Chunked Doc",
+    chunk_size=1024,  # Larger chunks for more context
+    chunk_overlap=200,  # More overlap for continuity
+)
+```
+
+### Retrieval Configuration
+
+```python
+# Fine-tune retrieval parameters
+rag_tool = Tool(
+    retrieval=Retrieval(
+        vertex_rag_store=VertexRagStore(
+            rag_resources=[rag_corpus.name],
+            similarity_top_k=5,  # Retrieve more chunks
+            vector_distance_threshold=0.5,  # Similarity threshold
+        )
+    )
+)
+```
+
+## File Management
+
+### List Files in Corpus
+
+```python
+# List all files in a corpus
+files = rag.list_files(corpus_name=rag_corpus.name)
+for file in files:
+    print(f"File: {file.display_name} - {file.name}")
+```
+
+### Delete Files
+
+```python
+# Delete a specific file
+rag.delete_file(name=rag_file.name)
+
+print(f"File deleted: {rag_file.name}")
+```
+
+### Delete Corpus
+
+```python
+# Delete entire corpus
+rag.delete_corpus(name=rag_corpus.name)
+
+print(f"Corpus deleted: {rag_corpus.name}")
+```
+
+<Warning>
+Deleting a corpus will permanently remove all associated files and embeddings. This action cannot be undone.
+</Warning>
+
+## Best Practices
+
+<Steps>
+  <Step title="Choose the Right Embedding Model">
+    Use `text-embedding-005` for general text or `text-multilingual-embedding-002` for multilingual content
+  </Step>
+  
+  <Step title="Optimize Chunk Size">
+    Balance between 256-1024 tokens depending on your use case. Smaller chunks for precise retrieval, larger for more context
+  </Step>
+  
+  <Step title="Set Appropriate Retrieval Count">
+    Start with `similarity_top_k=3-5` and adjust based on response quality
+  </Step>
+  
+  <Step title="Monitor and Evaluate">
+    Use the Gen AI Evaluation Service to measure retrieval accuracy and response quality
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Vertex AI Search" icon="magnifying-glass" href="./vertex-ai-search">
+    Learn about enterprise search capabilities
+  </Card>
+  
+  <Card title="Grounding Techniques" icon="anchor" href="./grounding-techniques">
+    Explore advanced grounding strategies
+  </Card>
+  
+  <Card title="Evaluation" icon="chart-bar" href="../evaluation/overview">
+    Evaluate your RAG system performance
+  </Card>
+  
+  <Card title="API Reference" icon="book" href="https://cloud.google.com/vertex-ai/generative-ai/docs/model-reference/rag-api">
+    View the complete RAG API reference
+  </Card>
+</CardGroup>

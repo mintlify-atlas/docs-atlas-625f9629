@@ -1,0 +1,459 @@
+---
+title: Vertex AI Model Garden
+description: Browse, deploy, and manage open-source models from Model Garden and Hugging Face Hub
+---
+
+## What is Model Garden?
+
+Vertex AI Model Garden is a curated catalog of open-source and proprietary models that you can discover, evaluate, and deploy on Google Cloud. It provides:
+
+- **Pre-configured Models**: Optimized deployment configurations for popular open models
+- **One-Click Deployment**: Simplified deployment process via UI, CLI, or SDK
+- **Hugging Face Integration**: Access to over 1 million models from the Hugging Face Hub
+- **Version Management**: Track and manage different model versions
+
+## Model Garden SDK
+
+The Vertex AI Model Garden SDK provides a model-centric interface for deploying open-source models, removing the need to manage container details and infrastructure complexity.
+
+### Installation
+
+```bash
+pip install --upgrade google-cloud-aiplatform>=1.93.1
+```
+
+### Basic Usage
+
+<Steps>
+  <Step title="Initialize Vertex AI">
+    ```python
+    import vertexai
+    from vertexai import model_garden
+    
+    PROJECT_ID = "your-project-id"
+    LOCATION = "us-central1"
+    
+    vertexai.init(project=PROJECT_ID, location=LOCATION)
+    ```
+  </Step>
+  <Step title="Discover Models">
+    ```python
+    # List Model Garden models
+    mg_models = model_garden.list_deployable_models(
+        model_filter="gemma",
+        list_hf_models=False
+    )
+    
+    # Include Hugging Face models
+    all_models = model_garden.list_deployable_models(
+        model_filter="gemma",
+        list_hf_models=True
+    )
+    
+    for model_id in all_models:
+        print(f"Available: {model_id}")
+    ```
+  </Step>
+  <Step title="Deploy a Model">
+    ```python
+    # Create model instance
+    model = model_garden.OpenModel("google/gemma3@gemma-3-1b-it")
+    
+    # Deploy to endpoint
+    endpoint = model.deploy(accept_eula=True)
+    
+    print(f"Endpoint: {endpoint.resource_name}")
+    ```
+  </Step>
+</Steps>
+
+## Browsing Models
+
+### Model Identifiers
+
+Model Garden uses a hierarchical naming scheme:
+
+<CodeGroup>
+```text Model Garden Format
+publisher/model@version
+
+Example:
+google/gemma3@gemma-3-1b-it
+meta/llama3_1@llama-3.1-8b-instruct
+```
+
+```text Hugging Face Format
+organization/model-name
+
+Example:
+stabilityai/stable-diffusion-xl-base-1.0
+black-forest-labs/FLUX.1-dev
+```
+</CodeGroup>
+
+### Filtering and Search
+
+Find models matching specific criteria:
+
+```python
+# Search by name
+gemma_models = model_garden.list_deployable_models(
+    model_filter="gemma",
+    list_hf_models=True
+)
+
+# Search for vision models
+vision_models = model_garden.list_deployable_models(
+    model_filter="stable-diffusion",
+    list_hf_models=True
+)
+
+# List all available models
+all_models = model_garden.list_deployable_models(list_hf_models=True)
+print(f"Total models available: {len(all_models)}")
+```
+
+## Deploying Models
+
+### Check Deployment Options
+
+Before deploying, review available configurations:
+
+```python
+model = model_garden.OpenModel("google/gemma3@gemma-3-1b-it")
+
+# List deployment configurations
+deploy_options = model.list_deploy_options(concise=True)
+print(deploy_options)
+```
+
+<Note>
+Deployment options show the verified machine types, accelerators, and configurations that work best for each model.
+</Note>
+
+### Basic Deployment
+
+Deploy with default settings:
+
+```python
+model = model_garden.OpenModel("google/gemma3@gemma-3-1b-it")
+endpoint = model.deploy(accept_eula=True)
+```
+
+### Advanced Deployment Configuration
+
+Customize deployment parameters:
+
+<CodeGroup>
+```python Compute Resources
+endpoint = model.deploy(
+    machine_type="g2-standard-12",
+    accelerator_type="NVIDIA_L4",
+    accelerator_count=2,
+    min_replica_count=1,
+    max_replica_count=5,
+    endpoint_display_name="my-gemma-endpoint",
+    model_display_name="gemma-production"
+)
+```
+
+```python Spot VMs
+# Use spot VMs for cost savings
+endpoint = model.deploy(
+    machine_type="g2-standard-4",
+    accelerator_type="NVIDIA_L4",
+    accelerator_count=1,
+    use_spot=True,  # Up to 80% cost savings
+    min_replica_count=1,
+    max_replica_count=3
+)
+```
+
+```python Extended Timeout
+# For large models requiring longer deployment
+endpoint = model.deploy(
+    machine_type="g2-standard-4",
+    accelerator_type="NVIDIA_L4",
+    accelerator_count=1,
+    deploy_request_timeout=3 * 60 * 60  # 3 hours
+)
+```
+</CodeGroup>
+
+## Hugging Face Integration
+
+### Accessing Public Models
+
+Deploy any public model from Hugging Face Hub:
+
+```python
+# Deploy Stable Diffusion
+sd_model = model_garden.OpenModel("stabilityai/stable-diffusion-xl-base-1.0")
+sd_endpoint = sd_model.deploy(
+    machine_type="g2-standard-4",
+    accelerator_type="NVIDIA_L4",
+    accelerator_count=1
+)
+```
+
+### Gated Models
+
+Some models require additional authentication:
+
+<Steps>
+  <Step title="Accept Model License">
+    Visit the model page on Hugging Face and accept the license terms:
+    
+    - Navigate to https://huggingface.co/MODEL_NAME
+    - Click "Agree and access repository"
+    - Wait for approval (usually instant)
+  </Step>
+  <Step title="Create Access Token">
+    Generate a Hugging Face access token:
+    
+    1. Go to https://huggingface.co/settings/tokens
+    2. Click "New token"
+    3. Select "Read" access
+    4. Copy the token
+  </Step>
+  <Step title="Deploy with Token">
+    ```python
+    from huggingface_hub import interpreter_login
+    
+    # Login to Hugging Face
+    interpreter_login()
+    
+    # Or provide token directly
+    model = model_garden.OpenModel("black-forest-labs/FLUX.1-dev")
+    endpoint = model.deploy(
+        hugging_face_access_token="hf_your_token_here"
+    )
+    ```
+  </Step>
+</Steps>
+
+## Model Garden CLI
+
+For automation and scripting, use the Model Garden CLI:
+
+<CodeGroup>
+```bash List Models
+# List available models
+gcloud ai models list \
+  --region=us-central1 \
+  --filter="displayName:gemma"
+```
+
+```bash Deploy Model
+# Deploy via CLI
+gcloud ai models deploy MODEL_ID \
+  --region=us-central1 \
+  --endpoint=ENDPOINT_ID \
+  --machine-type=g2-standard-4 \
+  --accelerator=type=nvidia-l4,count=1
+```
+
+```bash Terraform Deployment
+# Deploy using Terraform
+resource "google_vertex_ai_endpoint" "model_endpoint" {
+  name         = "gemma-endpoint"
+  display_name = "Gemma Production Endpoint"
+  location     = "us-central1"
+}
+
+resource "google_vertex_ai_endpoint_deployed_model" "gemma" {
+  endpoint      = google_vertex_ai_endpoint.model_endpoint.id
+  model         = "publishers/google/models/gemma3"
+  
+  deployed_model {
+    machine_spec {
+      machine_type      = "g2-standard-4"
+      accelerator_type  = "NVIDIA_L4"
+      accelerator_count = 1
+    }
+    
+    automatic_resources {
+      min_replica_count = 1
+      max_replica_count = 3
+    }
+  }
+}
+```
+</CodeGroup>
+
+## Making Predictions
+
+### Using Vertex AI SDK
+
+```python
+# Text generation
+prediction = endpoint.predict(
+    instances=[{
+        "prompt": "Explain quantum computing in simple terms",
+        "temperature": 0.7,
+        "max_tokens": 200,
+        "top_p": 0.95
+    }]
+)
+
+print(prediction.predictions[0])
+```
+
+### Using OpenAI SDK
+
+```python
+import openai
+import google.auth
+
+# Get credentials
+creds, project = google.auth.default()
+auth_req = google.auth.transport.requests.Request()
+creds.refresh(auth_req)
+
+# Configure OpenAI client
+endpoint_url = f"https://{LOCATION}-aiplatform.googleapis.com/v1beta1/{endpoint.resource_name}"
+client = openai.OpenAI(base_url=endpoint_url, api_key=creds.token)
+
+# Generate response
+response = client.chat.completions.create(
+    model="",
+    messages=[{"role": "user", "content": "Tell me a joke"}],
+    temperature=0.7,
+    max_tokens=50
+)
+
+print(response.choices[0].message.content)
+```
+
+### Image Generation
+
+For image generation models:
+
+```python
+import base64
+import io
+from PIL import Image
+
+# Generate image
+prediction = sd_endpoint.predict(instances=["A serene mountain landscape at sunset"])
+
+# Decode and display
+image_bytes = base64.b64decode(prediction.predictions[0])
+image = Image.open(io.BytesIO(image_bytes))
+image.show()
+```
+
+## Error Handling
+
+### Common Deployment Errors
+
+<Tabs>
+  <Tab title="Model Not Found">
+    ```python
+    try:
+        model = model_garden.OpenModel("google/some-model@some-version")
+        endpoint = model.deploy()
+    except Exception as e:
+        print(f"Error: {e}")
+        # Check model name spelling and version
+    ```
+  </Tab>
+  <Tab title="Insufficient Quota">
+    ```python
+    try:
+        endpoint = model.deploy(
+            machine_type="g2-standard-4",
+            accelerator_type="NVIDIA_L4"
+        )
+    except Exception as e:
+        if "quota" in str(e).lower():
+            print("Request quota increase:")
+            print("https://console.cloud.google.com/iam-admin/quotas")
+    ```
+  </Tab>
+  <Tab title="EULA Not Accepted">
+    ```python
+    try:
+        model = model_garden.OpenModel("meta/llama3_1@llama-3.1-8b-instruct")
+        endpoint = model.deploy()  # Missing accept_eula=True
+    except Exception as e:
+        if "eula" in str(e).lower():
+            # Retry with EULA acceptance
+            endpoint = model.deploy(accept_eula=True)
+    ```
+  </Tab>
+  <Tab title="Organization Policy">
+    If deployment is blocked by organization policies:
+    
+    ```python
+    # Error: Organization Policy constraint violated
+    # Contact your administrator to update policies:
+    # https://cloud.google.com/vertex-ai/generative-ai/docs/control-model-access
+    ```
+  </Tab>
+</Tabs>
+
+## Custom Model Import
+
+Import your own models to Model Garden:
+
+```python
+from google.cloud import aiplatform
+
+# Upload custom model
+model = aiplatform.Model.upload(
+    display_name="my-custom-model",
+    artifact_uri="gs://my-bucket/model-artifacts/",
+    serving_container_image_uri=f"{LOCATION}-docker.pkg.dev/{PROJECT_ID}/repo/custom-image:latest",
+    serving_container_environment_variables={
+        "MODEL_ID": "custom-model-v1"
+    }
+)
+
+# Deploy custom model
+endpoint = model.deploy(
+    machine_type="n1-standard-4",
+    min_replica_count=1,
+    max_replica_count=3
+)
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Check Configurations" icon="list-check">
+    Always review `list_deploy_options()` before deploying to verify resource requirements
+  </Card>
+  <Card title="Start Small" icon="seedling">
+    Begin with smaller models and scale up as needed
+  </Card>
+  <Card title="Use Autoscaling" icon="arrows-up-down">
+    Configure min/max replicas to handle traffic spikes efficiently
+  </Card>
+  <Card title="Monitor Costs" icon="chart-line">
+    Set up billing alerts and use spot VMs for non-critical workloads
+  </Card>
+  <Card title="Version Control" icon="code-branch">
+    Track model versions in deployment names for easier management
+  </Card>
+  <Card title="Test Thoroughly" icon="flask">
+    Validate model outputs before promoting to production
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Fine-Tune Models" icon="sliders" href="/advanced/open-models/fine-tuning">
+    Customize models for your specific use cases
+  </Card>
+  <Card title="Optimize Serving" icon="gauge-high" href="/advanced/open-models/serving">
+    Learn about inference optimization with vLLM and TGI
+  </Card>
+  <Card title="Example Notebooks" icon="book" href="https://github.com/GoogleCloudPlatform/generative-ai/tree/main/open-models">
+    Explore deployment examples on GitHub
+  </Card>
+  <Card title="Model Garden Console" icon="browser" href="https://console.cloud.google.com/vertex-ai/model-garden">
+    Browse models in the Cloud Console
+  </Card>
+</CardGroup>

@@ -1,0 +1,434 @@
+---
+title: "Agent Engine for Production Deployment"
+description: "Deploy and manage AI agents with tools, reasoning, and orchestration using Agent Engine in Vertex AI"
+---
+
+## Overview
+
+Agent Engine in Vertex AI is a managed service for building and deploying production-grade AI agents. It provides infrastructure for agents that combine language models, tools (via function calling), and orchestration frameworks like LangChain or LlamaIndex.
+
+<Note>
+Agent Engine integrates closely with the Gemini API and manages prompts, agents, and tools in a modular, scalable way.
+</Note>
+
+## Architecture
+
+An agent consists of three key components:
+
+<Steps>
+  <Step title="Model Layer">
+    The foundation LLM (Gemini) that provides reasoning capabilities
+  </Step>
+  <Step title="Tools Layer">
+    Python functions exposed via Gemini Function Calling to interact with external systems
+  </Step>
+  <Step title="Orchestration Layer">
+    Framework (LangChain, LlamaIndex) that coordinates model calls and tool execution
+  </Step>
+</Steps>
+
+## Building Your First Agent
+
+### Installation
+
+Install the Vertex AI SDK with Agent Engine support:
+
+```bash
+pip install --upgrade "google-cloud-aiplatform[agent_engines,langchain]" \
+  cloudpickle==3.0.0 "pydantic>=2.10" requests
+```
+
+### Define Model and Tools
+
+<CodeGroup>
+```python Model Configuration
+import vertexai
+from vertexai.preview.reasoning_engines import LangchainAgent
+
+PROJECT_ID = "your-project-id"
+LOCATION = "us-central1"
+STAGING_BUCKET = "gs://your-staging-bucket"
+
+vertexai.init(
+    project=PROJECT_ID,
+    location=LOCATION,
+    staging_bucket=STAGING_BUCKET
+)
+
+# Specify the model
+model = "gemini-2.0-flash-exp"
+```
+
+```python Define Tools
+def get_exchange_rate(
+    currency_from: str = "USD",
+    currency_to: str = "EUR",
+    currency_date: str = "latest",
+) -> dict:
+    """Retrieves the exchange rate between two currencies on a specified date.
+    
+    Args:
+        currency_from: Source currency code (e.g., 'USD')
+        currency_to: Target currency code (e.g., 'EUR')
+        currency_date: Date in YYYY-MM-DD format or 'latest'
+    
+    Returns:
+        Dictionary with exchange rate information
+    """
+    import requests
+    
+    response = requests.get(
+        f"https://api.frankfurter.app/{currency_date}",
+        params={"from": currency_from, "to": currency_to},
+    )
+    return response.json()
+
+def get_weather(location: str) -> dict:
+    """Get current weather for a location.
+    
+    Args:
+        location: City name or coordinates
+    
+    Returns:
+        Weather information dictionary
+    """
+    # Implementation would call weather API
+    return {
+        "location": location,
+        "temperature": 72,
+        "conditions": "partly cloudy"
+    }
+
+# List of tools for the agent
+tools = [get_exchange_rate, get_weather]
+```
+
+```python Local Testing
+# Test the agent locally before deployment
+test_agent = LangchainAgent(
+    model=model,
+    tools=tools,
+    agent_executor_kwargs={"return_intermediate_steps": True}
+)
+
+# Test query
+response = test_agent.query(
+    input="What is the exchange rate from USD to EUR?"
+)
+print(response)
+```
+</CodeGroup>
+
+### Deploy to Agent Engine
+
+Deploy your agent to a managed endpoint:
+
+```python
+from vertexai import agent_engines
+
+# Create the agent
+remote_agent = agent_engines.create(
+    LangchainAgent(
+        model=model,
+        tools=tools,
+    ),
+    requirements=[
+        "google-cloud-aiplatform[agent_engines,langchain]",
+        "requests",
+    ],
+    display_name="currency-weather-agent",
+    description="Agent that provides currency and weather information",
+)
+
+print(f"Agent deployed: {remote_agent.resource_name}")
+print(f"Agent endpoint: {remote_agent.gca_resource.deployed_model_refs[0].endpoint}")
+```
+
+### Query the Deployed Agent
+
+```python
+# Query the remote agent
+response = remote_agent.query(
+    input="What's the current EUR to JPY rate and weather in Tokyo?"
+)
+
+print("Response:", response["output"])
+
+# View intermediate steps
+for step in response.get("intermediate_steps", []):
+    print(f"Tool: {step[0].tool}")
+    print(f"Input: {step[0].tool_input}")
+    print(f"Output: {step[1]}")
+```
+
+## Advanced Agent Patterns
+
+### RAG Agent with Vector Search
+
+Build an agent that retrieves information from documents:
+
+```python
+from langchain_google_vertexai import VertexAIEmbeddings
+from langchain_community.vectorstores import Chroma
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.document_loaders import TextLoader
+
+class RAGAgent:
+    def __init__(self, docs_path: str):
+        # Load and split documents
+        loader = TextLoader(docs_path)
+        documents = loader.load()
+        
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=200
+        )
+        splits = text_splitter.split_documents(documents)
+        
+        # Create embeddings and vector store
+        embeddings = VertexAIEmbeddings(
+            model_name="text-embedding-004"
+        )
+        self.vectorstore = Chroma.from_documents(
+            documents=splits,
+            embedding=embeddings
+        )
+    
+    def search_documents(self, query: str, k: int = 3) -> str:
+        """Search documents and return relevant passages.
+        
+        Args:
+            query: Search query
+            k: Number of results to return
+        
+        Returns:
+            Formatted string with relevant passages
+        """
+        docs = self.vectorstore.similarity_search(query, k=k)
+        return "\n\n".join([doc.page_content for doc in docs])
+
+# Initialize RAG agent
+rag_agent = RAGAgent(docs_path="./knowledge_base.txt")
+
+# Deploy with RAG capabilities
+remote_rag_agent = agent_engines.create(
+    LangchainAgent(
+        model="gemini-2.0-flash-exp",
+        tools=[rag_agent.search_documents],
+    ),
+    requirements=[
+        "google-cloud-aiplatform[agent_engines,langchain]",
+        "chromadb",
+        "langchain-google-vertexai",
+    ],
+    display_name="rag-agent",
+)
+```
+
+### Multi-Agent System
+
+Orchestrate multiple specialized agents:
+
+```python
+from langchain.agents import AgentType, initialize_agent
+
+class MultiAgentOrchestrator:
+    def __init__(self):
+        # Research agent
+        self.research_agent = LangchainAgent(
+            model="gemini-2.0-flash-exp",
+            tools=[search_web, extract_entities],
+        )
+        
+        # Analysis agent
+        self.analysis_agent = LangchainAgent(
+            model="gemini-1.5-pro",
+            tools=[analyze_sentiment, generate_insights],
+        )
+    
+    def coordinate_task(self, task: str) -> dict:
+        """Coordinate task across multiple agents."""
+        # Step 1: Research phase
+        research_results = self.research_agent.query(
+            input=f"Research the following: {task}"
+        )
+        
+        # Step 2: Analysis phase
+        analysis_results = self.analysis_agent.query(
+            input=f"Analyze this research: {research_results['output']}"
+        )
+        
+        return {
+            "research": research_results,
+            "analysis": analysis_results
+        }
+```
+
+## Agent Management
+
+### List Deployed Agents
+
+```python
+from vertexai import agent_engines
+
+# List all agents in the project
+agents = agent_engines.list(
+    filter='display_name="currency-weather-agent"'
+)
+
+for agent in agents:
+    print(f"Name: {agent.display_name}")
+    print(f"Resource: {agent.resource_name}")
+    print(f"Created: {agent.create_time}")
+    print("---")
+```
+
+### Update an Agent
+
+```python
+# Get existing agent
+agent = agent_engines.get("projects/.../locations/.../reasoningEngines/...")
+
+# Update tools
+new_tools = [get_exchange_rate, get_weather, get_stock_price]
+
+updated_agent = agent_engines.update(
+    agent.resource_name,
+    LangchainAgent(
+        model="gemini-2.0-flash-exp",
+        tools=new_tools,
+    )
+)
+```
+
+### Delete an Agent
+
+```python
+# Delete agent when no longer needed
+agent_engines.delete(agent.resource_name)
+print("Agent deleted successfully")
+```
+
+## Monitoring and Observability
+
+### Enable Logging
+
+```python
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+logger = logging.getLogger(__name__)
+
+# Log agent queries
+logger.info(f"Querying agent with: {query}")
+response = remote_agent.query(input=query)
+logger.info(f"Agent response received: {len(response['output'])} chars")
+```
+
+### Track Performance Metrics
+
+```python
+import time
+from typing import Dict, Any
+
+def query_with_metrics(agent, query: str) -> Dict[str, Any]:
+    """Query agent and track performance metrics."""
+    start_time = time.time()
+    
+    try:
+        response = agent.query(input=query)
+        elapsed_time = time.time() - start_time
+        
+        metrics = {
+            "success": True,
+            "latency_seconds": elapsed_time,
+            "input_length": len(query),
+            "output_length": len(response["output"]),
+            "tools_called": len(response.get("intermediate_steps", [])),
+        }
+        
+        return {"response": response, "metrics": metrics}
+    
+    except Exception as e:
+        elapsed_time = time.time() - start_time
+        return {
+            "success": False,
+            "error": str(e),
+            "latency_seconds": elapsed_time,
+        }
+```
+
+## Express Mode
+
+For rapid prototyping, use Express Mode for serverless agent deployment:
+
+```python
+from vertexai.preview import reasoning_engines
+
+# Deploy agent with minimal configuration
+agent = reasoning_engines.create(
+    model="gemini-2.0-flash-exp",
+    tools=[get_exchange_rate],
+    mode="express",  # Serverless deployment
+)
+
+# Query immediately
+response = agent.query(
+    input="Convert 100 USD to GBP"
+)
+```
+
+<Warning>
+Express Mode is intended for development and testing. For production workloads, use fully configured Agent Engine deployments with appropriate resource allocation.
+</Warning>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Test Locally First" icon="vial">
+    Always test agents locally before deploying to catch errors early
+  </Card>
+  <Card title="Version Control" icon="code-branch">
+    Use version control for agent code and maintain deployment history
+  </Card>
+  <Card title="Monitor Performance" icon="chart-line">
+    Track latency, error rates, and tool usage patterns
+  </Card>
+  <Card title="Implement Retries" icon="arrows-rotate">
+    Add retry logic for external API calls and tool failures
+  </Card>
+</CardGroup>
+
+### Security Considerations
+
+```python
+import os
+from google.cloud import secretmanager
+
+def get_api_key(secret_id: str) -> str:
+    """Retrieve API key from Secret Manager."""
+    client = secretmanager.SecretManagerServiceClient()
+    project_id = os.environ["GOOGLE_CLOUD_PROJECT"]
+    
+    name = f"projects/{project_id}/secrets/{secret_id}/versions/latest"
+    response = client.access_secret_version(request={"name": name})
+    
+    return response.payload.data.decode("UTF-8")
+
+# Use in tool functions
+def call_external_api(query: str) -> dict:
+    """Call external API with secure credentials."""
+    api_key = get_api_key("external-api-key")
+    # Use api_key in requests...
+```
+
+## Next Steps
+
+- Explore [Orchestration](/advanced/orchestration) frameworks
+- Optimize costs with [Model Optimizer](/advanced/model-optimizer)
+- Implement [Responsible AI](/advanced/responsible-ai) safeguards

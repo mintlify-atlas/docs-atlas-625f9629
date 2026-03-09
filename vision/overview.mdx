@@ -1,0 +1,136 @@
+---
+title: 'Vision Overview'
+description: 'Learn about image generation and editing with Imagen and Gemini models on Google Cloud'
+---
+
+## Introduction to Vision AI
+
+Google Cloud offers powerful generative AI capabilities for creating and editing images through two primary model families:
+
+<CardGroup cols={2}>
+  <Card title="Imagen" icon="image" href="/vision/image-generation">
+    Google's state-of-the-art text-to-image model for high-quality image generation
+  </Card>
+  <Card title="Gemini Image Generation" icon="sparkles" href="/vision/image-editing">
+    Multimodal conversational image generation and editing with Gemini models
+  </Card>
+</CardGroup>
+
+## Imagen on Vertex AI
+
+Imagen brings Google's state-of-the-art generative AI capabilities to application developers. The Imagen family includes:
+
+- **Imagen 4**: Google's highest quality text-to-image model with exceptional detail, improved prompt adherence, and advanced text rendering
+- **Imagen 4 Fast**: Optimized for lower latency with brighter images and higher contrast
+- **Imagen 4 Ultra**: Exceptional quality with enhanced photorealism
+- **Imagen 3**: Previous generation with robust editing and customization capabilities
+
+### Key Capabilities
+
+<CardGroup cols={2}>
+  <Card title="Text-to-Image Generation" icon="wand-magic-sparkles">
+    Generate high-quality images from natural language descriptions
+  </Card>
+  <Card title="Image Editing" icon="pen-to-square">
+    Modify existing images with inpainting, outpainting, and mask-based editing
+  </Card>
+  <Card title="Text Rendering" icon="font">
+    Accurately render text within images for posters, comics, and logos
+  </Card>
+  <Card title="Multilingual Support" icon="language">
+    Process prompts in 10+ languages including English, Spanish, Japanese, and more
+  </Card>
+</CardGroup>
+
+## Gemini Image Generation
+
+Gemini 2.5 Flash Image (also known as "Nano Banana") is a powerful multimodal model that combines conversational AI with image generation and editing capabilities.
+
+### Unique Features
+
+- **Conversational Image Editing**: Iteratively refine images through natural conversation
+- **Interleaved Content**: Generate sequences mixing text and images (e.g., step-by-step tutorials)
+- **Multi-Reference Editing**: Combine multiple input images to create new compositions
+- **Subject Customization**: Apply specific subjects or styles from reference images
+
+<Note>
+  Gemini 2.5 Flash Image is ideal for applications requiring iterative design workflows, interactive image creation, or tightly integrated text and visual content.
+</Note>
+
+## Getting Started
+
+<Steps>
+  <Step title="Set up your environment">
+    Install the Google Gen AI SDK for Python:
+    ```bash
+    pip install --upgrade google-genai
+    ```
+  </Step>
+  
+  <Step title="Configure authentication">
+    Set up your Google Cloud project and enable the Vertex AI API:
+    ```python
+    from google import genai
+    from google.genai import types
+
+    PROJECT_ID = "your-project-id"
+    LOCATION = "us-central1"
+    
+    client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+    ```
+  </Step>
+  
+  <Step title="Generate your first image">
+    Start creating images with a simple text prompt:
+    ```python
+    # Using Imagen 4
+    image = client.models.generate_images(
+        model="imagen-4.0-generate-001",
+        prompt="a serene mountain landscape at sunset",
+        config=types.GenerateImagesConfig(
+            aspect_ratio="16:9",
+            number_of_images=1,
+        ),
+    )
+    ```
+  </Step>
+</Steps>
+
+## Model Selection Guide
+
+| Model | Best For | Latency | Quality |
+|-------|----------|---------|----------|
+| Imagen 4 | High-quality images with text rendering | Medium | Highest |
+| Imagen 4 Fast | Quick iterations, prototyping | Low | High |
+| Imagen 4 Ultra | Professional-grade photorealism | High | Exceptional |
+| Gemini 2.5 Flash Image | Conversational editing, tutorials | Medium | High |
+
+## Safety and Watermarking
+
+All images generated with these models include:
+
+- **SynthID Watermark**: Digital watermark for identifying AI-generated content
+- **Safety Filters**: Configurable content filtering to block inappropriate content
+- **Person Generation Controls**: Fine-grained control over generating images with people
+
+<Warning>
+  Always configure appropriate safety filters for your application's use case. Available levels include `BLOCK_LOW_AND_ABOVE`, `BLOCK_MEDIUM_AND_ABOVE`, `BLOCK_ONLY_HIGH`, and `BLOCK_NONE`.
+</Warning>
+
+## Learn More
+
+<CardGroup cols={2}>
+  <Card title="Image Generation" icon="images" href="/vision/image-generation">
+    Text-to-image generation techniques and prompt engineering
+  </Card>
+  <Card title="Image Editing" icon="edit" href="/vision/image-editing">
+    Inpainting, outpainting, and advanced editing workflows
+  </Card>
+  <Card title="Visual Q&A" icon="comments" href="/vision/visual-qa">
+    Image understanding and visual question answering
+  </Card>
+</CardGroup>
+
+## Supported Locations
+
+Imagen and Gemini Image models are available in multiple regions. For the most up-to-date list of supported locations, see the [Vertex AI locations documentation](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/locations).

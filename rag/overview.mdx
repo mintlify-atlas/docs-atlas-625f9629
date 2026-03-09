@@ -1,0 +1,178 @@
+---
+title: RAG & Search Overview
+description: Learn about Retrieval-Augmented Generation (RAG) and search capabilities on Google Cloud for building grounded AI applications
+---
+
+## What is RAG and Grounding?
+
+Retrieval-Augmented Generation (RAG) improves Large Language Models (LLMs) by allowing them to access and process external information sources during generation. This ensures the model's responses are grounded in factual data and reduces hallucinations.
+
+<CardGroup cols={2}>
+  <Card title="Ungrounded Generation" icon="brain">
+    Relies on LLM training data alone and is prone to hallucinations when it doesn't have all the right facts
+  </Card>
+  <Card title="Grounded Generation" icon="anchor">
+    Provides fresh and potentially private data to the model as part of its input or prompt
+  </Card>
+</CardGroup>
+
+**RAG** is a technique that retrieves relevant facts, often via search, and provides them to the LLM to improve generation quality and reduce hallucinations.
+
+## Why Use RAG?
+
+<Steps>
+  <Step title="Access Up-to-Date Information">
+    LLMs are trained on static datasets, so their knowledge can become outdated. RAG allows them to access real-time or frequently updated information.
+  </Step>
+  
+  <Step title="Improved Accuracy">
+    RAG reduces the risk of LLM "hallucinations" (generating false or misleading information) by grounding responses in verified external data.
+  </Step>
+  
+  <Step title="Enhanced Context">
+    By combining additional knowledge sources with existing LLM knowledge, RAG provides better context to enhance response quality.
+  </Step>
+  
+  <Step title="Private Data Access">
+    Enable LLMs to understand and use your organization's private data that wasn't part of their training.
+  </Step>
+</Steps>
+
+## RAG Architecture
+
+A typical RAG system consists of several key components:
+
+### 1. Data Ingestion
+
+Intake data from different sources:
+- Local files
+- Google Cloud Storage
+- Google Drive
+- BigQuery
+- Websites and structured data
+
+### 2. Data Transformation
+
+Conversion and preparation of data for indexing:
+- Document parsing and extraction
+- Text chunking and splitting
+- Metadata extraction
+- Format normalization
+
+### 3. Embedding
+
+Numerical representations of text that capture semantic meaning and context. Similar or related text tends to have similar embeddings in high-dimensional vector space.
+
+```python
+from vertexai.language_models import TextEmbeddingModel
+
+# Initialize embedding model
+model = TextEmbeddingModel.from_pretrained("text-embedding-005")
+
+# Generate embeddings
+embeddings = model.get_embeddings(["Sample text to embed"])
+for embedding in embeddings:
+    vector = embedding.values
+    print(f"Embedding dimension: {len(vector)}")
+```
+
+### 4. Data Indexing
+
+Structure the knowledge base for optimized searching:
+- Vector databases (Vertex AI Vector Search, Feature Store)
+- Enterprise search indexes (Vertex AI Search)
+- Database storage (AlloyDB, BigQuery)
+
+### 5. Retrieval
+
+When a user asks a question, the retrieval component searches through the knowledge base to find relevant information:
+- Semantic search using vector similarity
+- Keyword-based search
+- Hybrid search combining both approaches
+
+### 6. Generation
+
+The retrieved information becomes context added to the original user query to guide the LLM in generating factually grounded responses.
+
+```python
+from google import genai
+from google.genai.types import Tool, Retrieval, VertexRagStore
+
+client = genai.Client(vertexai=True, project=PROJECT_ID, location="global")
+
+# Define RAG tool
+rag_tool = Tool(
+    retrieval=Retrieval(
+        vertex_rag_store=VertexRagStore(
+            rag_resources=[f"projects/{PROJECT_ID}/locations/us-east1/ragCorpora/{corpus_name}"]
+        )
+    )
+)
+
+# Generate with RAG context
+response = client.models.generate_content(
+    model="gemini-2.0-flash-001",
+    contents="What are the key features of our product?",
+    config={"tools": [rag_tool]}
+)
+```
+
+## RAG Solutions on Google Cloud
+
+Google Cloud offers multiple approaches for implementing RAG:
+
+<CardGroup cols={2}>
+  <Card title="Vertex AI Search" icon="magnifying-glass" href="./vertex-ai-search">
+    Out-of-the-box enterprise search with Google-quality results for your data
+  </Card>
+  
+  <Card title="RAG Engine" icon="gear" href="./rag-engine">
+    Managed data framework for building context-augmented LLM applications with flexible backends
+  </Card>
+  
+  <Card title="Custom RAG" icon="code">
+    Build your own RAG pipeline using Vertex AI components and vector databases
+  </Card>
+  
+  <Card title="Grounding API" icon="link" href="./grounding-techniques">
+    Ground Gemini responses in Google Search or Vertex AI Search with a simple API
+  </Card>
+</CardGroup>
+
+## Common Use Cases
+
+### Enterprise Search
+Enable employees to search across company documents, wikis, and data sources with natural language queries.
+
+### Customer Support
+Provide customer service agents or chatbots with instant access to product documentation and support knowledge bases.
+
+### Document Q&A
+Answer questions about contracts, reports, research papers, and other documents by extracting relevant information.
+
+### Code Search
+Help developers find relevant code snippets, API documentation, and implementation examples.
+
+<Note>
+For best results with RAG, focus on high-quality data ingestion, appropriate chunking strategies, and comprehensive evaluation of retrieval accuracy.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="RAG Engine" icon="rocket" href="./rag-engine">
+    Learn about managed RAG orchestration with Vertex AI
+  </Card>
+  
+  <Card title="Vertex AI Search" icon="database" href="./vertex-ai-search">
+    Explore enterprise search capabilities and datastores
+  </Card>
+  
+  <Card title="Grounding Techniques" icon="book" href="./grounding-techniques">
+    Understand chunking, retrieval, and grounding strategies
+  </Card>
+  
+  <Card title="Evaluation" icon="chart-line" href="../evaluation/overview">
+    Learn how to evaluate RAG system performance
+  </Card>
+</CardGroup>

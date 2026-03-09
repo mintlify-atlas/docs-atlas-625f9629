@@ -1,0 +1,250 @@
+---
+title: Gemini Models Overview
+description: Learn about the Gemini model family, capabilities, and available versions on Google Cloud
+---
+
+# Gemini Models Overview
+
+Gemini is a family of multimodal generative AI models developed by Google DeepMind, designed for state-of-the-art performance across text, code, images, audio, and video understanding.
+
+## Model Family
+
+The Gemini family includes several model variants optimized for different use cases:
+
+### Gemini 3.1 Pro
+
+**Gemini 3.1 Pro** is Google's latest flagship model with enhanced capabilities:
+
+- **Enhanced stability & grounding**: Improved factuality and reduced repetitive response patterns
+- **Advanced coding & agentic capabilities**: Significant improvements in software engineering and agentic performance
+- **Efficiency & reasoning modes**: Improved token efficiency with Medium thinking level to balance depth with latency
+- **Core quality improvements**: Advanced reasoning, instruction following, and creative writing
+
+### Gemini 3 Flash
+
+Optimized for speed and efficiency while maintaining high-quality output:
+
+- Fast response times for real-time applications
+- Cost-effective for high-volume workloads
+- Supports multimodal inputs (text, images, video, audio)
+- Excellent for chat, code generation, and content analysis
+
+### Gemini 2.5 Models
+
+Previous generation models with strong performance:
+
+- **Gemini 2.5 Pro**: Balanced performance for complex reasoning
+- **Gemini 2.5 Flash**: Speed-optimized variant
+- **Gemini 2.5 Flash Lite**: Ultra-lightweight for edge deployments
+
+## Key Capabilities
+
+<CardGroup cols={2}>
+  <Card title="Multimodal Understanding" icon="image">
+    Process and understand text, images, video, audio, and PDFs in a single unified model
+  </Card>
+  
+  <Card title="Advanced Reasoning" icon="brain">
+    Dynamic thinking with configurable reasoning depth for complex problem-solving
+  </Card>
+  
+  <Card title="Code Generation" icon="code">
+    Generate, execute, and debug Python code with built-in code execution
+  </Card>
+  
+  <Card title="Function Calling" icon="function">
+    Integrate with external APIs and tools through structured function declarations
+  </Card>
+  
+  <Card title="Grounding" icon="anchor">
+    Connect to real-time data via Google Search or custom data sources
+  </Card>
+  
+  <Card title="Long Context" icon="book-open">
+    Process up to millions of tokens with context caching for cost optimization
+  </Card>
+</CardGroup>
+
+## Available Models
+
+| Model ID | Context Window | Strengths | Best For |
+|----------|---------------|-----------|----------|
+| `gemini-3.1-pro-preview` | 2M tokens | Advanced reasoning, coding | Complex tasks, agents |
+| `gemini-3-flash-preview` | 1M tokens | Speed, efficiency | Real-time apps, high volume |
+| `gemini-2.5-pro` | 2M tokens | Balanced performance | General purpose |
+| `gemini-2.5-flash` | 1M tokens | Fast responses | Production workloads |
+| `gemini-2.5-flash-lite` | 1M tokens | Lightweight | Edge deployment |
+
+## Getting Started
+
+<Steps>
+  <Step title="Install the SDK">
+    Install the Google Gen AI SDK for Python:
+    
+    ```bash
+    pip install --upgrade google-genai
+    ```
+  </Step>
+  
+  <Step title="Set up authentication">
+    Authenticate your environment and enable the Vertex AI API:
+    
+    ```python
+    from google.colab import auth
+    auth.authenticate_user()
+    ```
+  </Step>
+  
+  <Step title="Initialize the client">
+    Create a client with your project details:
+    
+    ```python
+    from google import genai
+    
+    client = genai.Client(
+        vertexai=True,
+        project="your-project-id",
+        location="global"
+    )
+    ```
+  </Step>
+  
+  <Step title="Generate content">
+    Send your first request:
+    
+    ```python
+    response = client.models.generate_content(
+        model="gemini-3.1-pro-preview",
+        contents="Explain how AI works in simple terms."
+    )
+    print(response.text)
+    ```
+  </Step>
+</Steps>
+
+## Model Configuration
+
+Control model behavior with generation parameters:
+
+```python
+from google.genai.types import GenerateContentConfig, ThinkingConfig, ThinkingLevel
+
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents="How does AI work?",
+    config=GenerateContentConfig(
+        temperature=1.0,          # Creativity (0.0-2.0)
+        top_p=0.95,              # Nucleus sampling
+        max_output_tokens=8000,  # Response length limit
+        thinking_config=ThinkingConfig(
+            thinking_level=ThinkingLevel.LOW  # Reasoning depth
+        )
+    )
+)
+```
+
+<Note>
+For Gemini 3 models, we recommend keeping `temperature` at the default value of `1.0` as the reasoning capabilities are optimized for this setting.
+</Note>
+
+## Thinking Levels
+
+Gemini 3.1 Pro introduces granular control over reasoning depth:
+
+- **Low** (1-1K tokens): Minimizes latency for simple tasks
+- **Medium** (1K-16K tokens): Balances reasoning and latency  
+- **High** (16K-32K tokens): Maximizes reasoning depth (default)
+
+```python
+from google.genai.types import ThinkingConfig, ThinkingLevel
+
+# For faster responses on simple queries
+config = GenerateContentConfig(
+    thinking_config=ThinkingConfig(
+        thinking_level=ThinkingLevel.LOW
+    )
+)
+
+# For complex reasoning tasks
+config = GenerateContentConfig(
+    thinking_config=ThinkingConfig(
+        thinking_level=ThinkingLevel.HIGH
+    )
+)
+```
+
+## Media Resolution Control
+
+Gemini 3 allows fine-grained control over image and video processing:
+
+```python
+from google.genai.types import Part, PartMediaResolution, PartMediaResolutionLevel
+
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents=[
+        Part(
+            file_data=types.FileData(
+                file_uri="gs://path/to/image.jpg",
+                mime_type="image/jpeg"
+            ),
+            media_resolution=PartMediaResolution(
+                level=PartMediaResolutionLevel.MEDIA_RESOLUTION_HIGH
+            )
+        ),
+        "Analyze this image in detail."
+    ]
+)
+```
+
+## Safety Settings
+
+Configure content filtering for responsible AI:
+
+```python
+from google.genai.types import SafetySetting, HarmCategory, HarmBlockThreshold
+
+safety_settings = [
+    SafetySetting(
+        category=HarmCategory.HARM_CATEGORY_HARASSMENT,
+        threshold=HarmBlockThreshold.BLOCK_LOW_AND_ABOVE
+    ),
+    SafetySetting(
+        category=HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+        threshold=HarmBlockThreshold.BLOCK_LOW_AND_ABOVE
+    )
+]
+
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents="Your prompt here",
+    config=GenerateContentConfig(safety_settings=safety_settings)
+)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Getting Started" icon="rocket" href="/gemini/getting-started">
+    Learn basic text generation and model configuration
+  </Card>
+  
+  <Card title="Multimodal Inputs" icon="images" href="/gemini/multimodal">
+    Process images, video, audio, and documents
+  </Card>
+  
+  <Card title="Function Calling" icon="function" href="/gemini/function-calling">
+    Connect Gemini to external tools and APIs
+  </Card>
+  
+  <Card title="Grounding" icon="database" href="/gemini/grounding">
+    Ground responses in Google Search or custom data
+  </Card>
+</CardGroup>
+
+## Resources
+
+- [Gemini Models Documentation](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/models#gemini-models)
+- [Vertex AI Pricing](https://cloud.google.com/vertex-ai/pricing)
+- [API Reference](https://cloud.google.com/vertex-ai/generative-ai/docs/model-reference/gemini)
+- [GitHub Examples](https://github.com/GoogleCloudPlatform/generative-ai/tree/main/gemini)

@@ -1,0 +1,157 @@
+---
+title: "Introduction"
+description: "Sample code and notebooks for building generative AI applications with Gemini on Vertex AI"
+---
+
+<Note>
+**Gemini 3.1 Pro has been released!** Explore the latest multimodal capabilities and enhanced performance.
+</Note>
+
+## Welcome to Generative AI on Google Cloud
+
+This comprehensive repository contains notebooks, code samples, sample applications, and resources demonstrating how to use, develop, and manage generative AI workflows using [Generative AI on Google Cloud](https://cloud.google.com/ai/generative-ai) with [Vertex AI](https://cloud.google.com/vertex-ai).
+
+With over 350 Jupyter notebooks and real-world applications, you'll learn how to leverage Google's most powerful AI models including Gemini, Imagen, and specialized services like Vertex AI Search.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Gemini Multimodal Models" icon="sparkles" href="/gemini/overview">
+    Build with state-of-the-art multimodal AI that understands text, images, video, and audio
+  </Card>
+  <Card title="AI Agents" icon="robot" href="/agents/overview">
+    Create intelligent agents with the Agent Development Kit and Agent Engine
+  </Card>
+  <Card title="RAG & Search" icon="magnifying-glass" href="/rag/overview">
+    Ground your AI with retrieval augmented generation and Vertex AI Search
+  </Card>
+  <Card title="Vector Embeddings" icon="vector-square" href="/embeddings/overview">
+    Build semantic search with text and multimodal embeddings
+  </Card>
+  <Card title="Image Generation" icon="image" href="/vision/overview">
+    Generate and edit images with Imagen on Vertex AI
+  </Card>
+  <Card title="Model Evaluation" icon="chart-line" href="/advanced/evaluation/overview">
+    Evaluate and compare models with the Gen AI Evaluation SDK
+  </Card>
+</CardGroup>
+
+## Quick Start
+
+Get up and running in minutes:
+
+<Steps>
+  <Step title="Set up Google Cloud">
+    Configure your Google Cloud project and enable Vertex AI APIs
+    
+    [Environment Setup Guide](/setup)
+  </Step>
+  
+  <Step title="Install the SDK">
+    Install the Vertex AI Python SDK and authenticate
+    
+    ```bash
+    pip install google-cloud-aiplatform
+    ```
+  </Step>
+  
+  <Step title="Run your first notebook">
+    Start with a simple Gemini example
+    
+    [Quickstart Guide](/quickstart)
+  </Step>
+</Steps>
+
+## What You'll Find Here
+
+### Gemini Models
+Discover Gemini through starter notebooks, use cases, function calling, multimodal processing, and sample applications. Learn about:
+
+- **Multimodal capabilities** - Process text, images, video, and audio in a single model
+- **Function calling** - Connect Gemini to external tools and APIs
+- **Grounding** - Ground responses with Google Search or your own data
+- **Context caching** - Optimize costs by caching large contexts
+- **Code execution** - Run Python code directly within Gemini
+
+### AI Agents
+Build stateful, context-aware conversational agents using:
+
+- **Agent Engine** - Managed service for deploying production agents
+- **Agent Development Kit (ADK)** - Framework for building custom agents
+- **Memory Bank** - Persistent memory for conversational context
+
+### RAG & Search
+Implement retrieval augmented generation with:
+
+- **RAG Engine** - Managed RAG service on Vertex AI
+- **Vertex AI Search** - Enterprise search across your data
+- **Grounding techniques** - Connect models to authoritative sources
+
+### Production Features
+Take your applications to production with:
+
+- **Model evaluation** - Comprehensive testing and benchmarking
+- **Orchestration** - LangChain, LlamaIndex, and custom workflows
+- **Responsible AI** - Safety filters and content moderation
+- **Open models** - Deploy and fine-tune open source models from Model Garden
+
+## Repository Structure
+
+<Accordion title="gemini/">
+  Core Gemini model samples including getting started guides, function calling, multimodal processing, evaluation, and sample applications
+</Accordion>
+
+<Accordion title="search/">
+  Vertex AI Search samples for building search engines and retrieval systems
+</Accordion>
+
+<Accordion title="embeddings/">
+  Text and multimodal embeddings with Vector Search integration
+</Accordion>
+
+<Accordion title="vision/">
+  Image generation, editing, and visual question answering with Imagen
+</Accordion>
+
+<Accordion title="audio/">
+  Speech recognition and audio processing with Chirp
+</Accordion>
+
+<Accordion title="agents/">
+  Agent development samples including ADK and Agent Engine
+</Accordion>
+
+## Community & Support
+
+<CardGroup cols={2}>
+  <Card title="GitHub Repository" icon="github" href="https://github.com/GoogleCloudPlatform/generative-ai">
+    View source code, report issues, and contribute
+  </Card>
+  <Card title="Contributing Guide" icon="code-pull-request" href="https://github.com/GoogleCloudPlatform/generative-ai/blob/main/CONTRIBUTING.md">
+    Learn how to contribute to this repository
+  </Card>
+  <Card title="Learning Resources" icon="graduation-cap" href="https://cloud.google.com/ai/generative-ai">
+    Explore Google Cloud's Generative AI documentation
+  </Card>
+  <Card title="Vertex AI Documentation" icon="book-open" href="https://cloud.google.com/vertex-ai/docs">
+    Official Vertex AI product documentation
+  </Card>
+</CardGroup>
+
+<Warning>
+This repository is for demonstrative purposes only and is not an officially supported Google product. For production applications, refer to the official [Vertex AI documentation](https://cloud.google.com/vertex-ai/docs).
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Setup" icon="wrench" href="/setup">
+    Configure your environment
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run your first example
+  </Card>
+  <Card title="Explore Use Cases" icon="compass" href="/use-cases/overview">
+    Browse real-world applications
+  </Card>
+</CardGroup>

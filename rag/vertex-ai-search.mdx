@@ -1,0 +1,515 @@
+---
+title: Vertex AI Search
+description: Build enterprise search applications with Google-quality search for your data using Vertex AI Search
+---
+
+## Overview
+
+[Vertex AI Search](https://cloud.google.com/generative-ai-app-builder/docs/enterprise-search-introduction) (formerly Enterprise Search) provides out-of-the-box search capabilities with Google-quality results for your own data. It enables you to build enterprise search engines and RAG applications in minutes without managing infrastructure.
+
+<CardGroup cols={2}>
+  <Card title="Quick Setup" icon="bolt">
+    Create a search engine with just a few clicks or lines of code
+  </Card>
+  
+  <Card title="Scale Ready" icon="arrows-maximize">
+    Built on Google's search infrastructure for production-scale workloads
+  </Card>
+  
+  <Card title="Multiple Data Sources" icon="database">
+    Ingest from GCS, BigQuery, websites, and structured data
+  </Card>
+  
+  <Card title="AI-Powered" icon="sparkles">
+    Native integration with Gemini for grounded generation
+  </Card>
+</CardGroup>
+
+## Key Features
+
+### Enterprise Search Capabilities
+- **Semantic Search**: Understand user intent beyond keyword matching
+- **Extractive Answers**: Pull precise answers from documents
+- **Summarization**: Generate summaries across multiple documents
+- **Faceted Search**: Filter by metadata and structured fields
+- **Custom Ranking**: Tune relevance with custom ranking formulas
+
+### Data Source Support
+- Unstructured documents (PDF, DOCX, HTML, TXT)
+- Structured data (JSON, CSV)
+- Website content and sitemaps
+- BigQuery tables
+- Cloud Storage buckets
+- Google Drive folders
+
+## Creating a Datastore
+
+Datastores contain your searchable content. Each datastore represents a collection of documents from one or more data sources.
+
+### Install the SDK
+
+```bash
+pip install --upgrade google-cloud-discoveryengine
+```
+
+### Create a Datastore
+
+```python
+from google.api_core.client_options import ClientOptions
+from google.cloud import discoveryengine
+
+PROJECT_ID = "your-project-id"
+LOCATION = "global"  # or regional location
+
+def create_data_store(
+    project_id: str,
+    location: str,
+    data_store_name: str,
+    data_store_id: str
+):
+    # Create a client
+    client_options = (
+        ClientOptions(api_endpoint=f"{location}-discoveryengine.googleapis.com")
+        if location != "global"
+        else None
+    )
+    client = discoveryengine.DataStoreServiceClient(client_options=client_options)
+
+    # Initialize datastore
+    data_store = discoveryengine.DataStore(
+        display_name=data_store_name,
+        industry_vertical=discoveryengine.IndustryVertical.GENERIC,
+        content_config=discoveryengine.DataStore.ContentConfig.CONTENT_REQUIRED,
+    )
+
+    # Create datastore
+    operation = client.create_data_store(
+        request=discoveryengine.CreateDataStoreRequest(
+            parent=client.collection_path(project_id, location, "default_collection"),
+            data_store=data_store,
+            data_store_id=data_store_id,
+        )
+    )
+
+    try:
+        response = operation.result(timeout=90)
+        print(f"Datastore created: {response.name}")
+        return response
+    except Exception as e:
+        print(f"Error creating datastore: {e}")
+
+# Create datastore
+DATASTORE_NAME = "product-docs"
+DATASTORE_ID = f"{DATASTORE_NAME}-id"
+
+create_data_store(PROJECT_ID, LOCATION, DATASTORE_NAME, DATASTORE_ID)
+```
+
+## Importing Documents
+
+### Import from Cloud Storage
+
+```python
+def import_documents(
+    project_id: str,
+    location: str,
+    data_store_id: str,
+    gcs_uri: str,
+):
+    # Create a client
+    client_options = (
+        ClientOptions(api_endpoint=f"{location}-discoveryengine.googleapis.com")
+        if location != "global"
+        else None
+    )
+    client = discoveryengine.DocumentServiceClient(client_options=client_options)
+
+    # The full resource name of the search engine branch
+    parent = client.branch_path(
+        project=project_id,
+        location=location,
+        data_store=data_store_id,
+        branch="default_branch",
+    )
+
+    request = discoveryengine.ImportDocumentsRequest(
+        parent=parent,
+        gcs_source=discoveryengine.GcsSource(
+            input_uris=[f"{gcs_uri}/*"],
+            data_schema="content"
+        ),
+        # Options: `FULL`, `INCREMENTAL`
+        reconciliation_mode=discoveryengine.ImportDocumentsRequest.ReconciliationMode.INCREMENTAL,
+    )
+
+    # Make the request
+    operation = client.import_documents(request=request)
+    response = operation.result()
+    
+    # Get metadata
+    metadata = discoveryengine.ImportDocumentsMetadata(operation.metadata)
+    print(f"Import completed: {metadata}")
+    return operation.operation.name
+
+# Import documents
+source_documents = "gs://your-bucket/documents"
+import_documents(PROJECT_ID, LOCATION, DATASTORE_ID, source_documents)
+```
+
+### Import from BigQuery
+
+```python
+# Import structured data from BigQuery
+request = discoveryengine.ImportDocumentsRequest(
+    parent=parent,
+    bigquery_source=discoveryengine.BigQuerySource(
+        project_id=PROJECT_ID,
+        dataset_id="your_dataset",
+        table_id="your_table",
+        data_schema="custom",  # Use custom schema for structured data
+    ),
+    reconciliation_mode=discoveryengine.ImportDocumentsRequest.ReconciliationMode.INCREMENTAL,
+)
+
+operation = client.import_documents(request=request)
+response = operation.result()
+```
+
+### Import from Website
+
+```python
+# Import from website using sitemap
+request = discoveryengine.ImportDocumentsRequest(
+    parent=parent,
+    gcs_source=discoveryengine.GcsSource(
+        input_uris=["gs://your-bucket/sitemap.xml"],
+        data_schema="content"
+    ),
+    reconciliation_mode=discoveryengine.ImportDocumentsRequest.ReconciliationMode.FULL,
+)
+
+operation = client.import_documents(request=request)
+response = operation.result()
+```
+
+## Creating a Search Application
+
+### Create a Search Engine
+
+```python
+def create_search_engine(
+    project_id: str,
+    location: str,
+    data_store_id: str,
+    engine_id: str,
+    display_name: str,
+):
+    client_options = (
+        ClientOptions(api_endpoint=f"{location}-discoveryengine.googleapis.com")
+        if location != "global"
+        else None
+    )
+    client = discoveryengine.EngineServiceClient(client_options=client_options)
+
+    # Configure search engine
+    engine = discoveryengine.Engine(
+        display_name=display_name,
+        solution_type=discoveryengine.SolutionType.SOLUTION_TYPE_SEARCH,
+        search_engine_config=discoveryengine.Engine.SearchEngineConfig(
+            search_tier=discoveryengine.SearchTier.SEARCH_TIER_ENTERPRISE,
+            search_add_ons=[discoveryengine.SearchAddOn.SEARCH_ADD_ON_LLM],
+        ),
+        data_store_ids=[data_store_id],
+    )
+
+    operation = client.create_engine(
+        request=discoveryengine.CreateEngineRequest(
+            parent=client.collection_path(project_id, location, "default_collection"),
+            engine=engine,
+            engine_id=engine_id,
+        )
+    )
+
+    response = operation.result(timeout=90)
+    print(f"Search engine created: {response.name}")
+    return response
+
+ENGINE_ID = "product-search-engine"
+create_search_engine(
+    PROJECT_ID,
+    LOCATION,
+    DATASTORE_ID,
+    ENGINE_ID,
+    "Product Documentation Search"
+)
+```
+
+## Performing Searches
+
+### Basic Search Query
+
+```python
+def search_documents(
+    project_id: str,
+    location: str,
+    engine_id: str,
+    search_query: str,
+    page_size: int = 10,
+):
+    client_options = (
+        ClientOptions(api_endpoint=f"{location}-discoveryengine.googleapis.com")
+        if location != "global"
+        else None
+    )
+    client = discoveryengine.SearchServiceClient(client_options=client_options)
+
+    serving_config = client.serving_config_path(
+        project=project_id,
+        location=location,
+        data_store=f"{DATASTORE_ID}",
+        serving_config="default_config",
+    )
+
+    # Perform search
+    response = client.search(
+        request=discoveryengine.SearchRequest(
+            serving_config=serving_config,
+            query=search_query,
+            page_size=page_size,
+        )
+    )
+
+    # Process results
+    for result in response.results:
+        document = result.document
+        print(f"Title: {document.struct_data.get('title', 'N/A')}")
+        print(f"URI: {document.struct_data.get('link', 'N/A')}")
+        print(f"Snippet: {document.derived_struct_data.get('snippets', [])}")
+        print("---")
+    
+    return response
+
+# Perform search
+results = search_documents(
+    PROJECT_ID,
+    LOCATION,
+    ENGINE_ID,
+    "How do I configure authentication?"
+)
+```
+
+### Search with Extractive Answers
+
+```python
+# Enable extractive answers
+response = client.search(
+    request=discoveryengine.SearchRequest(
+        serving_config=serving_config,
+        query=search_query,
+        page_size=10,
+        content_search_spec=discoveryengine.SearchRequest.ContentSearchSpec(
+            extractive_content_spec=discoveryengine.SearchRequest.ContentSearchSpec.ExtractiveContentSpec(
+                max_extractive_answer_count=1,
+                max_extractive_segment_count=3,
+            ),
+        ),
+    )
+)
+
+# Access extractive answers
+for result in response.results:
+    if hasattr(result.document.derived_struct_data, 'extractive_answers'):
+        for answer in result.document.derived_struct_data['extractive_answers']:
+            print(f"Answer: {answer['content']}")
+            print(f"Page: {answer.get('pageNumber', 'N/A')}")
+```
+
+### Search with Summarization
+
+```python
+# Enable LLM-powered summarization
+response = client.search(
+    request=discoveryengine.SearchRequest(
+        serving_config=serving_config,
+        query=search_query,
+        page_size=10,
+        content_search_spec=discoveryengine.SearchRequest.ContentSearchSpec(
+            summary_spec=discoveryengine.SearchRequest.ContentSearchSpec.SummarySpec(
+                summary_result_count=5,
+                include_citations=True,
+                model_spec=discoveryengine.SearchRequest.ContentSearchSpec.SummarySpec.ModelSpec(
+                    version="gemini-1.5-flash",
+                ),
+            ),
+        ),
+    )
+)
+
+# Access summary
+if response.summary:
+    print(f"Summary: {response.summary.summary_text}")
+    for citation in response.summary.summary_with_metadata.citations:
+        print(f"Citation: {citation}")
+```
+
+## Integration with Gemini (Grounding)
+
+Vertex AI Search integrates seamlessly with Gemini for grounded generation:
+
+```python
+from google import genai
+from google.genai.types import Tool, Retrieval, VertexAISearch, GenerateContentConfig
+
+client = genai.Client(vertexai=True, project=PROJECT_ID, location="global")
+
+# Define Vertex AI Search tool
+search_tool = Tool(
+    retrieval=Retrieval(
+        vertex_ai_search=VertexAISearch(
+            datastore=f"projects/{PROJECT_ID}/locations/global/collections/default_collection/dataStores/{DATASTORE_ID}"
+        )
+    )
+)
+
+# Generate with grounding
+response = client.models.generate_content(
+    model="gemini-2.0-flash-001",
+    contents="What are the authentication options for the API?",
+    config=GenerateContentConfig(
+        tools=[search_tool],
+        temperature=0.2,
+    ),
+)
+
+print(response.text)
+
+# Access grounding metadata
+for candidate in response.candidates:
+    if hasattr(candidate, "grounding_metadata"):
+        metadata = candidate.grounding_metadata
+        print(f"\nGrounding confidence: {metadata.retrieval_metadata}")
+        for chunk in metadata.grounding_chunks:
+            if hasattr(chunk, "retrieved_context"):
+                print(f"Source: {chunk.retrieved_context.uri}")
+```
+
+## Advanced Features
+
+### Filters and Metadata
+
+```python
+# Search with metadata filters
+response = client.search(
+    request=discoveryengine.SearchRequest(
+        serving_config=serving_config,
+        query=search_query,
+        filter='category: "api" AND version: "v2"',  # Filter expression
+        page_size=10,
+    )
+)
+```
+
+### Custom Ranking
+
+```python
+# Apply custom ranking
+response = client.search(
+    request=discoveryengine.SearchRequest(
+        serving_config=serving_config,
+        query=search_query,
+        ranking_expression="doc.rating * 2 + doc.views",  # Custom ranking formula
+        page_size=10,
+    )
+)
+```
+
+### Data Blending
+
+Combine multiple datastores for comprehensive search:
+
+```python
+# Create engine with multiple datastores
+engine = discoveryengine.Engine(
+    display_name="Multi-source Search",
+    solution_type=discoveryengine.SolutionType.SOLUTION_TYPE_SEARCH,
+    search_engine_config=discoveryengine.Engine.SearchEngineConfig(
+        search_tier=discoveryengine.SearchTier.SEARCH_TIER_ENTERPRISE,
+        search_add_ons=[discoveryengine.SearchAddOn.SEARCH_ADD_ON_LLM],
+    ),
+    data_store_ids=["datastore-1-id", "datastore-2-id", "datastore-3-id"],
+)
+```
+
+## Monitoring and Tuning
+
+### Search Analytics
+
+Vertex AI Search provides analytics on:
+- Query volume and patterns
+- Click-through rates
+- Zero-result queries
+- User engagement metrics
+
+### Tuning Options
+
+<Steps>
+  <Step title="Relevance Tuning">
+    Adjust search relevance using the tuning interface in Google Cloud Console
+  </Step>
+  
+  <Step title="Synonyms">
+    Define synonym sets to improve query understanding
+  </Step>
+  
+  <Step title="Boosting">
+    Boost or bury specific documents based on business rules
+  </Step>
+  
+  <Step title="Query Expansion">
+    Enable automatic query expansion for better recall
+  </Step>
+</Steps>
+
+<Note>
+Search tuning is available in the Google Cloud Console under Vertex AI Search settings.
+</Note>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Document Structure" icon="file-lines">
+    Use structured metadata fields for better filtering and faceting capabilities
+  </Card>
+  
+  <Card title="Incremental Updates" icon="rotate">
+    Use incremental mode for regular updates to avoid full reindexing
+  </Card>
+  
+  <Card title="Monitoring" icon="chart-line">
+    Monitor zero-result queries to identify content gaps or tuning opportunities
+  </Card>
+  
+  <Card title="Testing" icon="flask">
+    Test different summarization models and parameters for your use case
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Grounding with Gemini" icon="anchor" href="./grounding-techniques">
+    Learn how to ground Gemini responses with Vertex AI Search
+  </Card>
+  
+  <Card title="RAG Engine" icon="gear" href="./rag-engine">
+    Explore RAG Engine for more flexible RAG architectures
+  </Card>
+  
+  <Card title="Evaluation" icon="clipboard-check" href="../evaluation/overview">
+    Evaluate search relevance and response quality
+  </Card>
+  
+  <Card title="API Documentation" icon="book" href="https://cloud.google.com/generative-ai-app-builder/docs/apis">
+    View complete API reference
+  </Card>
+</CardGroup>

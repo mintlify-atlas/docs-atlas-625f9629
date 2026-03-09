@@ -1,0 +1,567 @@
+---
+title: Code Execution
+description: Generate and execute Python code automatically with Gemini
+---
+
+# Code Execution
+
+Code execution enables Gemini to generate, run, and iteratively refine Python code to solve problems. The model can write code, execute it in a secure sandbox, observe results, and automatically fix errors until producing a working solution.
+
+## Why Code Execution?
+
+<CardGroup cols={3}>
+  <Card title="Iterative Learning" icon="arrows-rotate">
+    Model observes execution results and refines code automatically
+  </Card>
+  
+  <Card title="Mathematical Accuracy" icon="calculator">
+    Solve complex calculations with verified results
+  </Card>
+  
+  <Card title="Data Processing" icon="chart-line">
+    Generate and test data analysis code
+  </Card>
+</CardGroup>
+
+## Supported Models
+
+Code execution is available on:
+- **gemini-3.1-pro-preview**
+- **gemini-3-flash-preview**
+- **gemini-2.5-pro**
+- **gemini-2.5-flash**
+
+## Basic Example
+
+### Setup
+
+```python
+from google import genai
+from google.genai.types import (
+    Tool,
+    ToolCodeExecution,
+    GenerateContentConfig
+)
+
+client = genai.Client(
+    vertexai=True,
+    project=PROJECT_ID,
+    location=LOCATION
+)
+
+# Define code execution tool
+code_execution_tool = Tool(code_execution=ToolCodeExecution())
+```
+
+### Generate and Execute Code
+
+```python
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents="What is the sum of the first 50 prime numbers? Generate and run code.",
+    config=GenerateContentConfig(
+        tools=[code_execution_tool],
+        temperature=0
+    )
+)
+
+print(response.text)
+# Output: The sum of the first 50 prime numbers is 5117.
+```
+
+### View Generated Code
+
+Access the Python code that was generated:
+
+```python
+for part in response.candidates[0].content.parts:
+    if part.executable_code:
+        print("Generated Code:")
+        print(part.executable_code.code)
+```
+
+**Output:**
+```python
+def is_prime(n):
+    if n <= 1:
+        return False
+    if n <= 3:
+        return True
+    if n % 2 == 0 or n % 3 == 0:
+        return False
+    i = 5
+    while i * i <= n:
+        if n % i == 0 or n % (i + 2) == 0:
+            return False
+        i += 6
+    return True
+
+primes = []
+num = 2
+while len(primes) < 50:
+    if is_prime(num):
+        primes.append(num)
+    num += 1
+
+sum_of_primes = sum(primes)
+print(f'{sum_of_primes=}')
+```
+
+### View Execution Results
+
+Access code execution output and status:
+
+```python
+for part in response.candidates[0].content.parts:
+    if part.code_execution_result:
+        print(f"Output: {part.code_execution_result.output}")
+        print(f"Outcome: {part.code_execution_result.outcome}")
+```
+
+**Output:**
+```
+Output: sum_of_primes=5117
+Outcome: Outcome.OUTCOME_OK
+```
+
+## Mathematical Problem Solving
+
+### Complex Calculations
+
+```python
+prompt = """
+A bat and a ball cost $1.10 in total. 
+The bat costs $1.00 more than the ball.
+How much does the ball cost?
+Solve this step-by-step with code.
+"""
+
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents=prompt,
+    config=GenerateContentConfig(
+        tools=[code_execution_tool],
+        temperature=0
+    )
+)
+
+print(response.text)
+```
+
+### Data Analysis
+
+```python
+prompt = """
+Generate random sales data for 12 months and:
+1. Calculate total annual revenue
+2. Find the best performing month
+3. Calculate month-over-month growth rate
+4. Identify any trends
+
+Use code to analyze the data.
+"""
+
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents=prompt,
+    config=GenerateContentConfig(
+        tools=[code_execution_tool]
+    )
+)
+
+print(response.text)
+```
+
+## Code Execution in Chat
+
+Maintain context across multiple code-related queries:
+
+```python
+chat = client.chats.create(
+    model="gemini-3-flash-preview",
+    config=GenerateContentConfig(
+        tools=[code_execution_tool],
+        temperature=0
+    )
+)
+
+# First query
+response = chat.send_message(
+    "Write a function that checks if a year is a leap year."
+)
+print("Assistant:", response.text)
+
+# Follow-up with context
+response = chat.send_message(
+    "Now write unit tests for that function."
+)
+print("\nAssistant:", response.text)
+
+# Another follow-up
+response = chat.send_message(
+    "Test it with the years 2000, 2020, 2024, and 1900."
+)
+print("\nAssistant:", response.text)
+```
+
+## Streaming Code Execution
+
+Stream responses as code is generated and executed:
+
+```python
+for chunk in client.models.generate_content_stream(
+    model="gemini-3-flash-preview",
+    contents="Calculate the factorial of 20. Show your work with code.",
+    config=GenerateContentConfig(
+        tools=[code_execution_tool],
+        temperature=0
+    )
+):
+    print(chunk.text, end="")
+```
+
+## Data Exploration
+
+Analyze datasets iteratively:
+
+```python
+prompt = """
+I have the following sales data:
+- January: $45,000
+- February: $52,000
+- March: $48,000
+- April: $61,000
+- May: $58,000
+- June: $63,000
+
+Analyze this data:
+1. Calculate average monthly sales
+2. Find percentage growth from January to June
+3. Identify which month had the highest growth rate
+4. Project sales for July based on the trend
+
+Use Python code to perform the analysis.
+"""
+
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents=prompt,
+    config=GenerateContentConfig(
+        tools=[code_execution_tool]
+    )
+)
+
+print(response.text)
+```
+
+## Algorithmic Problem Solving
+
+### Sorting Algorithm
+
+```python
+prompt = """
+Implement the quicksort algorithm in Python.
+Test it with the array [64, 34, 25, 12, 22, 11, 90]
+Verify the result is correctly sorted.
+"""
+
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents=prompt,
+    config=GenerateContentConfig(
+        tools=[code_execution_tool]
+    )
+)
+
+print(response.text)
+```
+
+### Graph Algorithms
+
+```python
+prompt = """
+Implement Dijkstra's shortest path algorithm.
+Create a sample graph with 5 nodes and find the shortest
+path from node A to node E.
+Show the path and its total distance.
+"""
+
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents=prompt,
+    config=GenerateContentConfig(
+        tools=[code_execution_tool]
+    )
+)
+
+print(response.text)
+```
+
+## Statistical Analysis
+
+```python
+prompt = """
+Generate 1000 random data points from a normal distribution
+with mean=100 and std=15.
+
+Then:
+1. Calculate mean, median, and standard deviation
+2. Find the 95th percentile
+3. Count how many values are within 1 standard deviation
+4. Verify this matches the 68-95-99.7 rule
+
+Use Python code with numpy.
+"""
+
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents=prompt,
+    config=GenerateContentConfig(
+        tools=[code_execution_tool]
+    )
+)
+
+print(response.text)
+```
+
+## Code Validation
+
+The model automatically validates and fixes code:
+
+```python
+prompt = """
+Write a function to calculate fibonacci numbers recursively.
+Test it with n=10 and n=20.
+If there are any issues, fix them.
+"""
+
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents=prompt,
+    config=GenerateContentConfig(
+        tools=[code_execution_tool]
+    )
+)
+
+print(response.text)
+# Model will generate code, test it, and refine if needed
+```
+
+## Extract Code and Results
+
+Programmatically access generated code and results:
+
+```python
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents="Calculate pi using the Monte Carlo method with 10000 samples.",
+    config=GenerateContentConfig(
+        tools=[code_execution_tool]
+    )
+)
+
+code = None
+result = None
+
+for part in response.candidates[0].content.parts:
+    if part.executable_code:
+        code = part.executable_code.code
+    if part.code_execution_result:
+        result = part.code_execution_result.output
+        outcome = part.code_execution_result.outcome
+
+print("Generated Code:")
+print(code)
+print("\nExecution Result:")
+print(result)
+print(f"\nOutcome: {outcome}")
+```
+
+## Combine with Other Features
+
+### Code Execution + Function Calling
+
+```python
+from google.genai.types import FunctionDeclaration
+
+get_data = FunctionDeclaration(
+    name="get_sales_data",
+    description="Retrieve sales data from database",
+    parameters={"type": "object", "properties": {}}
+)
+
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents="Get the sales data and analyze trends using Python.",
+    config=GenerateContentConfig(
+        tools=[
+            code_execution_tool,
+            Tool(function_declarations=[get_data])
+        ]
+    )
+)
+```
+
+### Code Execution + Multimodal
+
+```python
+from google.genai.types import Part
+
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents=[
+        Part.from_uri(
+            file_uri="gs://samples/data-chart.png",
+            mime_type="image/png"
+        ),
+        "Extract the data points from this chart and calculate the trend line."
+    ],
+    config=GenerateContentConfig(
+        tools=[code_execution_tool]
+    )
+)
+
+print(response.text)
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Clear Instructions" icon="list-check">
+    Specify exactly what the code should accomplish
+  </Card>
+  
+  <Card title="Temperature 0" icon="thermometer-empty">
+    Use temperature=0 for deterministic code generation
+  </Card>
+  
+  <Card title="Test Cases" icon="vial">
+    Include test cases in your prompts
+  </Card>
+  
+  <Card title="Verify Results" icon="check">
+    Always validate code execution outcomes
+  </Card>
+</CardGroup>
+
+### Effective Prompts
+
+✅ **Good Prompts:**
+```python
+"Calculate the sum of prime numbers less than 100. Generate and run code."
+"Write a function to reverse a string. Test it with 'hello world'."
+"Analyze this dataset and find outliers using statistical methods."
+```
+
+❌ **Less Effective:**
+```python
+"Do some math"  # Too vague
+"Write code"    # No clear objective
+"Calculate"     # Missing specifics
+```
+
+## Limitations
+
+<Warning>
+**Code Execution Limitations:**
+- Python standard library only (no pip packages)
+- Limited execution time (typically 30 seconds)
+- No file system access
+- No network access
+- Memory limits apply
+</Warning>
+
+### Available Libraries
+
+The execution environment includes Python standard library modules:
+- `math`, `random`, `statistics`
+- `datetime`, `time`
+- `json`, `csv`
+- `itertools`, `functools`
+- `collections`, `heapq`
+- And other standard library modules
+
+## Error Handling
+
+```python
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents="Your code request",
+    config=GenerateContentConfig(
+        tools=[code_execution_tool]
+    )
+)
+
+for part in response.candidates[0].content.parts:
+    if part.code_execution_result:
+        outcome = part.code_execution_result.outcome
+        
+        if outcome == "OUTCOME_OK":
+            print("Code executed successfully")
+            print(f"Result: {part.code_execution_result.output}")
+        elif outcome == "OUTCOME_FAILED":
+            print("Code execution failed")
+            print(f"Error: {part.code_execution_result.output}")
+        elif outcome == "OUTCOME_DEADLINE_EXCEEDED":
+            print("Code execution timed out")
+```
+
+## Debugging Code
+
+Ask the model to debug and fix issues:
+
+```python
+prompt = """
+This code has a bug:
+
+```python
+def fibonacci(n):
+    if n <= 0:
+        return 0
+    if n == 1:
+        return 1
+    return fibonacci(n-1) + fibonacci(n-2)
+
+print(fibonacci(50))  # This takes forever!
+```
+
+Find the problem and provide an optimized solution.
+Test both versions.
+"""
+
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents=prompt,
+    config=GenerateContentConfig(
+        tools=[code_execution_tool]
+    )
+)
+
+print(response.text)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Function Calling" icon="function" href="/gemini/function-calling">
+    Combine code execution with external APIs
+  </Card>
+  
+  <Card title="Multimodal" icon="images" href="/gemini/multimodal">
+    Generate code from images and diagrams
+  </Card>
+  
+  <Card title="Context Caching" icon="database" href="/gemini/context-caching">
+    Cache large code contexts
+  </Card>
+  
+  <Card title="Grounding" icon="anchor" href="/gemini/grounding">
+    Ground code generation in documentation
+  </Card>
+</CardGroup>
+
+## Resources
+
+- [Code Execution Documentation](https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/code-execution)
+- [Python Standard Library](https://docs.python.org/3/library/)
+- [Best Practices Guide](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/prompts/code-generation-prompts)

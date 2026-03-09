@@ -1,0 +1,577 @@
+---
+title: Function Calling
+description: Connect Gemini to external tools and APIs with structured function declarations
+---
+
+# Function Calling
+
+Function calling enables Gemini to request execution of external tools and APIs during generation. The model intelligently determines when to call functions, extracts parameters from natural language, and integrates results into responses.
+
+## Why Function Calling?
+
+Function calling bridges the gap between natural language and structured data:
+
+- **Structured Output**: Get consistent, parseable data instead of unstructured text
+- **Real-time Data**: Access external APIs, databases, and services
+- **Action Taking**: Enable the model to perform tasks in external systems
+- **Reliable Integration**: Reduce parsing errors with strongly-typed responses
+
+## Basic Example
+
+### Define a Function
+
+Declare functions using the `FunctionDeclaration` class:
+
+```python
+from google import genai
+from google.genai.types import FunctionDeclaration, Tool, GenerateContentConfig
+
+# Define function schema
+get_weather = FunctionDeclaration(
+    name="get_weather",
+    description="Get the current weather for a given location",
+    parameters={
+        "type": "object",
+        "properties": {
+            "location": {
+                "type": "string",
+                "description": "City name, e.g., 'San Francisco, CA'"
+            },
+            "unit": {
+                "type": "string",
+                "enum": ["celsius", "fahrenheit"],
+                "description": "Temperature unit"
+            }
+        },
+        "required": ["location"]
+    }
+)
+
+# Create a tool with the function
+weather_tool = Tool(function_declarations=[get_weather])
+```
+
+### Use the Function
+
+Send a request with the tool:
+
+```python
+client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents="What's the weather in London?",
+    config=GenerateContentConfig(
+        tools=[weather_tool],
+        temperature=0
+    )
+)
+
+# Extract function call
+function_call = response.function_calls[0]
+print(f"Function: {function_call.name}")
+print(f"Arguments: {function_call.args}")
+```
+
+**Output:**
+```
+Function: get_weather
+Arguments: {'location': 'London', 'unit': 'celsius'}
+```
+
+### Execute and Return Results
+
+Execute the function and send results back:
+
+```python
+from google.genai.types import Part
+
+# Execute your function
+def get_weather(location: str, unit: str = "celsius") -> dict:
+    # Call actual weather API
+    return {
+        "location": location,
+        "temperature": 18,
+        "unit": unit,
+        "condition": "Partly cloudy"
+    }
+
+# Get function response
+weather_data = get_weather(
+    location=function_call.args["location"],
+    unit=function_call.args.get("unit", "celsius")
+)
+
+# Send back to model
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents=[
+        "What's the weather in London?",
+        response.candidates[0].content,  # Include previous turn
+        Part.from_function_response(
+            name="get_weather",
+            response={"content": weather_data}
+        )
+    ],
+    config=GenerateContentConfig(tools=[weather_tool])
+)
+
+print(response.text)
+```
+
+**Output:**
+```
+The weather in London is currently 18°C and partly cloudy.
+```
+
+## Automatic Function Calling
+
+Let the SDK handle function execution automatically:
+
+```python
+def get_weather(city: str) -> str:
+    """Gets the weather in a city."""
+    if "london" in city.lower():
+        return "Rainy"
+    if "new york" in city.lower():
+        return "Sunny"
+    return "Cloudy"
+
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents="What's the weather in London and New York?",
+    config=GenerateContentConfig(
+        tools=[get_weather],  # Pass Python function directly
+    )
+)
+
+# SDK automatically executes functions and returns final text
+print(response.text)
+
+# View execution history
+for turn in response.automatic_function_calling_history:
+    for part in turn.parts:
+        if part.function_call:
+            print(f"Called: {part.function_call.name}")
+```
+
+## Multiple Functions
+
+### Google Store Example
+
+Define multiple related functions:
+
+```python
+get_product_info = FunctionDeclaration(
+    name="get_product_info",
+    description="Get stock and SKU for a product",
+    parameters={
+        "type": "object",
+        "properties": {
+            "product_name": {"type": "string", "description": "Product name"}
+        }
+    }
+)
+
+get_store_location = FunctionDeclaration(
+    name="get_store_location",
+    description="Get the closest store location",
+    parameters={
+        "type": "object",
+        "properties": {
+            "location": {"type": "string", "description": "City or address"}
+        }
+    }
+)
+
+place_order = FunctionDeclaration(
+    name="place_order",
+    description="Place an order for a product",
+    parameters={
+        "type": "object",
+        "properties": {
+            "product": {"type": "string", "description": "Product name"},
+            "address": {"type": "string", "description": "Shipping address"}
+        }
+    }
+)
+
+retail_tool = Tool(function_declarations=[
+    get_product_info,
+    get_store_location,
+    place_order
+])
+```
+
+### Chat Session
+
+Use functions in a multi-turn conversation:
+
+```python
+chat = client.chats.create(
+    model="gemini-3-flash-preview",
+    config=GenerateContentConfig(
+        temperature=0,
+        tools=[retail_tool]
+    )
+)
+
+# User asks about product
+response = chat.send_message("Do you have the Pixel 9 in stock?")
+print(f"Function: {response.function_calls[0].name}")
+# Output: Function: get_product_info
+
+# Simulate API response
+api_response = {"sku": "GA04834-US", "in_stock": "yes"}
+response = chat.send_message(
+    Part.from_function_response(
+        name="get_product_info",
+        response={"content": api_response}
+    )
+)
+print(response.text)
+# Output: Yes, the Pixel 9 is in stock (SKU: GA04834-US).
+```
+
+## Parallel Function Calling
+
+Gemini can request multiple function calls simultaneously:
+
+```python
+response = chat.send_message(
+    "What about the Pixel 9 Pro XL? Is there a store in Mountain View, CA?"
+)
+
+# Model requests both functions
+print(f"Number of function calls: {len(response.function_calls)}")
+for fc in response.function_calls:
+    print(f"  - {fc.name}: {fc.args}")
+```
+
+**Output:**
+```
+Number of function calls: 2
+  - get_product_info: {'product_name': 'Pixel 9 Pro XL'}
+  - get_store_location: {'location': 'Mountain View, CA'}
+```
+
+### Handle Multiple Responses
+
+```python
+# Execute both functions
+product_info = {"sku": "GA08475-US", "in_stock": "yes"}
+store_info = {"store": "2000 N Shoreline Blvd, Mountain View, CA 94043"}
+
+# Send both results back
+response = chat.send_message([
+    Part.from_function_response(
+        name="get_product_info",
+        response={"content": product_info}
+    ),
+    Part.from_function_response(
+        name="get_store_location",
+        response={"content": store_info}
+    )
+])
+
+print(response.text)
+```
+
+## Forced Function Calling
+
+Force the model to use specific functions:
+
+```python
+from google.genai.types import ToolConfig, FunctionCallingConfig, FunctionCallingConfigMode
+
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents="Tell me about the weather",
+    config=GenerateContentConfig(
+        tools=[weather_tool],
+        tool_config=ToolConfig(
+            function_calling_config=FunctionCallingConfig(
+                mode=FunctionCallingConfigMode.ANY,
+                allowed_function_names=["get_weather"]
+            )
+        )
+    )
+)
+
+# Model is forced to call get_weather
+assert response.function_calls[0].name == "get_weather"
+```
+
+### Function Calling Modes
+
+- **AUTO** (default): Model decides when to call functions
+- **ANY**: Model must call at least one function
+- **NONE**: Disable function calling
+
+```python
+# Require function call
+config = GenerateContentConfig(
+    tools=[weather_tool],
+    tool_config=ToolConfig(
+        function_calling_config=FunctionCallingConfig(
+            mode=FunctionCallingConfigMode.ANY
+        )
+    )
+)
+```
+
+## Streaming Function Calls
+
+Stream function call arguments as they're generated:
+
+```python
+for chunk in client.models.generate_content_stream(
+    model="gemini-3-flash-preview",
+    contents="What's the weather in London and New York?",
+    config=GenerateContentConfig(
+        tools=[weather_tool],
+        tool_config=ToolConfig(
+            function_calling_config=FunctionCallingConfig(
+                mode=FunctionCallingConfigMode.AUTO,
+                stream_function_call_arguments=True
+            )
+        )
+    )
+):
+    if chunk.function_calls:
+        function_call = chunk.function_calls[0]
+        if function_call.name:
+            print(f"Function: {function_call.name}")
+            print(f"Will continue: {function_call.will_continue}")
+```
+
+## Multimodal Function Responses
+
+Return images, video, or other media from functions:
+
+```python
+from google.genai.types import FunctionResponsePart, FunctionResponseFileData
+
+get_image = FunctionDeclaration(
+    name="get_image",
+    description="Retrieve image for an order item",
+    parameters={
+        "type": "object",
+        "properties": {
+            "item_name": {"type": "string", "description": "Item name"}
+        },
+        "required": ["item_name"]
+    }
+)
+
+image_tool = Tool(function_declarations=[get_image])
+
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents="Show me the green shirt I ordered last month.",
+    config=GenerateContentConfig(tools=[image_tool])
+)
+
+# Return image in function response
+function_response_data = {"image_ref": {"$ref": "shirt.jpg"}}
+function_response_multimodal = FunctionResponsePart(
+    file_data=FunctionResponseFileData(
+        mime_type="image/png",
+        display_name="shirt.jpg",
+        file_uri="gs://bucket/images/green-shirt.jpg"
+    )
+)
+
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents=[
+        "Show me the green shirt I ordered last month.",
+        response.candidates[0].content,
+        Part.from_function_response(
+            name="get_image",
+            response=function_response_data,
+            parts=[function_response_multimodal]
+        )
+    ],
+    config=GenerateContentConfig(tools=[image_tool])
+)
+```
+
+## Geocoding Example
+
+Real-world example using OpenStreetMap API:
+
+```python
+import requests
+
+def get_location(
+    street: str | None = None,
+    city: str | None = None,
+    state: str | None = None,
+    country: str | None = None,
+    postalcode: str | None = None
+) -> list[dict]:
+    """Get latitude and longitude for a location."""
+    base_url = "https://nominatim.openstreetmap.org/search"
+    params = {
+        "street": street,
+        "city": city,
+        "state": state,
+        "country": country,
+        "postalcode": postalcode,
+        "format": "json"
+    }
+    # Filter None values
+    params = {k: v for k, v in params.items() if v is not None}
+    
+    try:
+        response = requests.get(base_url, params=params, headers={"User-Agent": "none"})
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as e:
+        return []
+
+# Use automatic function calling
+response = client.models.generate_content(
+    model="gemini-3-flash-preview",
+    contents="Get coordinates for 1600 Amphitheatre Pkwy, Mountain View, CA 94043",
+    config=GenerateContentConfig(
+        tools=[get_location],
+        temperature=0
+    )
+)
+
+print(response.text)
+# Output: The coordinates are approximately 37.4220, -122.0841.
+```
+
+## Thought Signatures
+
+For thinking models (Gemini 3.1 Pro), function calling automatically manages thought signatures:
+
+```python
+# Automatic handling with SDK
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents="What's the weather in London?",
+    config=GenerateContentConfig(
+        tools=[get_weather],
+        thinking_config=ThinkingConfig(include_thoughts=True)
+    )
+)
+
+# Thought signatures preserved automatically in response.candidates[0].content
+```
+
+<Note>
+When using manual function calling with Gemini 3.1 Pro, always append the full `response.candidates[0].content` to maintain thought signatures across turns.
+</Note>
+
+## Complex Data Structures
+
+Define functions with nested objects and arrays:
+
+```python
+analyze_data = FunctionDeclaration(
+    name="analyze_data",
+    description="Analyze dataset with filters",
+    parameters={
+        "type": "object",
+        "properties": {
+            "dataset_id": {"type": "string"},
+            "filters": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "field": {"type": "string"},
+                        "operator": {"type": "string", "enum": ["=", ">", "<"]},
+                        "value": {"type": "number"}
+                    },
+                    "required": ["field", "operator", "value"]
+                }
+            },
+            "aggregations": {
+                "type": "object",
+                "properties": {
+                    "group_by": {"type": "string"},
+                    "metrics": {
+                        "type": "array",
+                        "items": {"type": "string"}
+                    }
+                }
+            }
+        },
+        "required": ["dataset_id"]
+    }
+)
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Clear Descriptions" icon="file-lines">
+    Write detailed function and parameter descriptions
+  </Card>
+  
+  <Card title="Use Enums" icon="list">
+    Define enums for parameters with fixed options
+  </Card>
+  
+  <Card title="Temperature 0" icon="thermometer-empty">
+    Use `temperature=0` for deterministic function calls
+  </Card>
+  
+  <Card title="Error Handling" icon="triangle-exclamation">
+    Validate function arguments before execution
+  </Card>
+</CardGroup>
+
+### Schema Guidelines
+
+- Use OpenAPI 3.0 JSON Schema format
+- Mark required parameters explicitly
+- Provide examples in descriptions
+- Avoid ambiguous parameter names
+
+### Error Handling
+
+```python
+try:
+    if response.function_calls:
+        function_call = response.function_calls[0]
+        
+        # Validate arguments
+        required_args = ["location"]
+        for arg in required_args:
+            if arg not in function_call.args:
+                raise ValueError(f"Missing required argument: {arg}")
+        
+        # Execute function
+        result = get_weather(**function_call.args)
+        
+except ValueError as e:
+    print(f"Invalid function call: {e}")
+except Exception as e:
+    print(f"Function execution error: {e}")
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Grounding" icon="anchor" href="/gemini/grounding">
+    Combine function calling with grounding
+  </Card>
+  
+  <Card title="Code Execution" icon="code" href="/gemini/code-execution">
+    Generate and run Python code automatically
+  </Card>
+  
+  <Card title="Multimodal" icon="images" href="/gemini/multimodal">
+    Use multimodal function responses
+  </Card>
+  
+  <Card title="Context Caching" icon="database" href="/gemini/context-caching">
+    Cache function declarations for efficiency
+  </Card>
+</CardGroup>

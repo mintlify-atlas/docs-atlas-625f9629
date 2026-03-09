@@ -1,0 +1,628 @@
+---
+title: Agent Evaluation
+description: Evaluate agentic systems including tool use, traces, and final response quality using Gen AI Evaluation SDK
+---
+
+# Agent Evaluation
+
+Evaluating agentic systems requires specialized approaches that account for tool calling, multi-step reasoning, and trace analysis. This guide shows you how to evaluate agents using the Gen AI Evaluation SDK.
+
+## What Makes Agent Evaluation Different
+
+Agents differ from simple models:
+
+- **Tool use**: Agents call functions and APIs to accomplish tasks
+- **Multi-step reasoning**: Complex tasks require multiple interactions
+- **Intermediate events**: Trace data captures agent decision-making
+- **Stateful sessions**: Context persists across interactions
+
+<Note>
+Agent evaluation requires both the final response quality and the quality of intermediate tool calls.
+</Note>
+
+## Agent Evaluation Metrics
+
+### Core Agent Metrics
+
+<CardGroup cols={2}>
+  <Card title="Tool Use Quality" icon="wrench">
+    Evaluates correctness of function calls, parameters, and tool selection
+  </Card>
+  <Card title="Final Response Quality" icon="message">
+    Assesses the quality of the agent's final answer to the user
+  </Card>
+  <Card title="Hallucination" icon="eye">
+    Detects fabricated information in agent responses
+  </Card>
+  <Card title="Safety" icon="shield">
+    Identifies harmful or inappropriate content
+  </Card>
+</CardGroup>
+
+### Tool-Specific Metrics
+
+```python
+tool_metrics = [
+    "tool_call_valid",          # Valid JSON structure
+    "tool_name_match",          # Correct tool selected
+    "tool_parameter_key_match", # Correct parameters used
+    "tool_parameter_kv_match"   # Correct parameter values
+]
+```
+
+## Installation
+
+Install the SDK with agent support:
+
+```bash
+pip install google-cloud-aiplatform[adk,agent_engines]
+pip install --upgrade google-cloud-aiplatform[evaluation]
+```
+
+## Creating and Evaluating an Agent
+
+### Define Agent Tools
+
+Create tools for your agent:
+
+```python
+from google.adk import Agent
+
+def search_products(query: str):
+    """Searches for products based on a query.
+    
+    Args:
+        query: The search query.
+        
+    Returns:
+        A list of products matching the query.
+    """
+    if "headphones" in query.lower():
+        return {
+            "products": [
+                {"name": "Wireless Headphones", "id": "B08H8H8H8H"}
+            ]
+        }
+    return {"products": []}
+
+def get_product_details(product_id: str):
+    """Gets the details for a given product ID.
+    
+    Args:
+        product_id: The ID of the product.
+        
+    Returns:
+        The details of the product.
+    """
+    if product_id == "B08H8H8H8H":
+        return {"details": "Noise-cancelling, 20-hour battery life."}
+    return {"error": "Product not found."}
+
+def add_to_cart(product_id: str, quantity: int):
+    """Adds a product to the cart.
+    
+    Args:
+        product_id: The ID of the product.
+        quantity: Quantity to add.
+        
+    Returns:
+        Status message.
+    """
+    return {"status": f"Added {quantity} of {product_id} to cart."}
+```
+
+### Create the Agent
+
+```python
+import vertexai
+from vertexai import Client
+from google.genai import types as genai_types
+
+PROJECT_ID = "your-project-id"
+LOCATION = "us-central1"
+
+vertexai.init(project=PROJECT_ID, location=LOCATION)
+
+client = Client(
+    project=PROJECT_ID,
+    location=LOCATION,
+    http_options=genai_types.HttpOptions(api_version="v1beta1")
+)
+
+ecommerce_agent = Agent(
+    model="gemini-2.5-flash",
+    name="ecommerce_agent",
+    instruction="You are an ecommerce expert",
+    tools=[search_products, get_product_details, add_to_cart]
+)
+```
+
+### Deploy the Agent
+
+Deploy to Agent Engine for evaluation:
+
+```python
+app = vertexai.agent_engines.AdkApp(
+    agent=ecommerce_agent
+)
+
+agent_engine = client.agent_engines.create(
+    agent=app,
+    config={
+        "staging_bucket": "gs://my-bucket",
+        "requirements": ["google-cloud-aiplatform[adk,agent_engines]"],
+        "env_vars": {"GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true"}
+    }
+)
+
+agent_resource_name = agent_engine.api_resource.name
+```
+
+<Note>
+Deployment may take up to 10 minutes. Enabling telemetry is crucial for trace collection.
+</Note>
+
+## Preparing Agent Datasets
+
+### Define Agent Prompts
+
+Create prompts specific to your agent's capabilities:
+
+```python
+import pandas as pd
+from vertexai import types
+
+session_inputs = types.evals.SessionInput(
+    user_id="user_123",
+    state={}
+)
+
+ecommerce_prompts = [
+    "Search for 'noise-cancelling headphones'.",
+    "Show me the details for product 'B08H8H8H8H'.",
+    "Add one pair of 'B08H8H8H8H' to my shopping cart.",
+    "Find 'wireless ear buds' and add the first result to my cart.",
+    "I need a new laptop with at least 16GB of RAM."
+]
+
+agent_dataset = pd.DataFrame({
+    "prompt": ecommerce_prompts,
+    "session_inputs": [session_inputs] * len(ecommerce_prompts)
+})
+```
+
+<Note>
+`session_inputs` are required for trace generation. They provide context for stateful agent interactions.
+</Note>
+
+## Running Agent Inference
+
+Execute the agent to collect responses and traces:
+
+```python
+agent_dataset_with_inference = client.evals.run_inference(
+    agent=agent_resource_name,
+    src=agent_dataset
+)
+
+# Display inference results
+agent_dataset_with_inference.show()
+```
+
+This adds two columns to your dataset:
+- `response`: The agent's final answer
+- `intermediate_events`: Trace data showing tool calls and reasoning
+
+## Evaluating Agent Performance
+
+### Create Agent Info
+
+Define agent metadata for evaluation:
+
+```python
+agent_info = types.evals.AgentInfo.load_from_agent(
+    ecommerce_agent,
+    agent_resource_name
+)
+```
+
+### Run Persistent Evaluation
+
+Create a persistent evaluation run:
+
+```python
+evaluation_run = client.evals.create_evaluation_run(
+    dataset=agent_dataset_with_inference,
+    agent_info=agent_info,
+    metrics=[
+        types.RubricMetric.FINAL_RESPONSE_QUALITY,
+        types.RubricMetric.TOOL_USE_QUALITY,
+        types.RubricMetric.HALLUCINATION,
+        types.RubricMetric.SAFETY
+    ],
+    dest="gs://my-bucket/agent-eval-results"
+)
+
+evaluation_run.show()
+```
+
+### Run Local Evaluation
+
+For faster iteration during development:
+
+```python
+eval_result = client.evals.evaluate(
+    dataset=agent_dataset_with_inference,
+    agent_info=agent_info,
+    metrics=[
+        types.RubricMetric.FINAL_RESPONSE_QUALITY,
+        types.RubricMetric.TOOL_USE_QUALITY,
+        types.RubricMetric.HALLUCINATION,
+        types.RubricMetric.SAFETY
+    ]
+)
+
+eval_result.show()
+```
+
+<Tabs>
+  <Tab title="Persistent Evaluation">
+    **Advantages:**
+    - Results stored in Vertex AI
+    - Accessible via console UI
+    - Long-term tracking
+    - Team collaboration
+    
+    **Use for:**
+    - Production evaluations
+    - Baseline comparisons
+    - Stakeholder reviews
+  </Tab>
+  
+  <Tab title="Local Evaluation">
+    **Advantages:**
+    - Faster execution
+    - Immediate results
+    - No storage overhead
+    - Rapid iteration
+    
+    **Use for:**
+    - Development
+    - Quick experiments
+    - Debugging
+  </Tab>
+</Tabs>
+
+### Poll for Completion
+
+Wait for persistent evaluation to finish:
+
+```python
+import time
+
+completed_states = {"SUCCEEDED", "FAILED", "CANCELLED"}
+
+while evaluation_run.state not in completed_states:
+    evaluation_run.show()
+    evaluation_run = client.evals.get_evaluation_run(
+        name=evaluation_run.name
+    )
+    time.sleep(5)
+
+# Get detailed results with traces
+evaluation_run = client.evals.get_evaluation_run(
+    name=evaluation_run.name,
+    include_evaluation_items=True
+)
+
+evaluation_run.show()
+```
+
+## Evaluating Tool Use
+
+### Bring-Your-Own-Prediction
+
+Evaluate saved agent responses:
+
+```python
+responses = [
+    '{"content": "", "tool_calls": [{"name": "book_tickets", "arguments": {"movie": "Mission Impossible", "theater": "Regal Edwards", "showtime": "7:30", "num_tix": "2"}}]}',
+]
+
+references = [
+    '{"content": "", "tool_calls": [{"name": "book_tickets", "arguments": {"movie": "Mission Impossible", "theater": "Regal Edwards", "showtime": "7:30", "num_tix": "2"}}]}',
+]
+
+tool_eval_dataset = pd.DataFrame({
+    "response": responses,
+    "reference": references
+})
+
+from vertexai.evaluation import EvalTask
+
+tool_eval_task = EvalTask(
+    dataset=tool_eval_dataset,
+    metrics=[
+        "tool_call_valid",
+        "tool_name_match",
+        "tool_parameter_key_match",
+        "tool_parameter_kv_match"
+    ],
+    experiment="tool-use-eval"
+)
+
+result = tool_eval_task.evaluate()
+```
+
+### Evaluate Tool Calling End-to-End
+
+Test agent with function calling:
+
+```python
+from vertexai.generative_models import GenerativeModel, Tool, FunctionDeclaration
+
+# Define tool for model
+get_weather = FunctionDeclaration(
+    name="get_weather",
+    description="Get the current weather in a location",
+    parameters={
+        "type": "object",
+        "properties": {
+            "location": {"type": "string", "description": "City name"}
+        },
+        "required": ["location"]
+    }
+)
+
+weather_tool = Tool(function_declarations=[get_weather])
+
+model = GenerativeModel(
+    "gemini-2.0-flash",
+    tools=[weather_tool]
+)
+
+# Evaluate
+eval_task = EvalTask(
+    dataset=tool_dataset,
+    metrics=["tool_call_valid", "tool_name_match"],
+    experiment="gemini-tool-eval"
+)
+
+result = eval_task.evaluate(model=model)
+```
+
+## Analyzing Evaluation Results
+
+### View Summary Metrics
+
+```python
+from vertexai.preview.evaluation import notebook_utils
+
+notebook_utils.display_eval_result(
+    title="Agent Evaluation Results",
+    eval_result=evaluation_run
+)
+```
+
+### Inspect Traces
+
+Evaluation reports include:
+
+- **Summary metrics**: Aggregated scores across all test cases
+- **Agent info**: Tool definitions, instructions, model configuration
+- **Detailed results**: Per-example scores with explanations
+- **Traces**: Step-by-step agent interactions and tool calls
+
+### Compare Agent Versions
+
+```python
+results = [
+    ("agent-v1", eval_result_v1),
+    ("agent-v2", eval_result_v2)
+]
+
+notebook_utils.display_radar_plot(
+    results,
+    metrics=[
+        "final_response_quality",
+        "tool_use_quality",
+        "hallucination",
+        "safety"
+    ]
+)
+```
+
+## Custom Agent Metrics
+
+Define domain-specific evaluation criteria:
+
+```python
+from vertexai.evaluation import PointwiseMetric
+
+task_completion_template = """
+You are evaluating an agent's ability to complete tasks.
+
+## Criteria
+Task Completion: The agent successfully accomplished the user's goal.
+
+## Rating Rubric
+5: Fully completed the task
+4: Mostly completed with minor issues
+3: Partially completed
+2: Attempted but failed
+1: Did not attempt the task
+
+## Evaluation Steps
+STEP 1: Review the conversation and agent actions
+STEP 2: Determine if the user's goal was achieved
+STEP 3: Score based on completion level
+
+# Context
+## User Request
+{prompt}
+
+## Agent Response
+{response}
+
+## Intermediate Events (Tool Calls)
+{intermediate_events}
+"""
+
+task_completion = PointwiseMetric(
+    metric="task_completion",
+    metric_prompt_template=task_completion_template
+)
+
+eval_result = client.evals.evaluate(
+    dataset=agent_dataset_with_inference,
+    agent_info=agent_info,
+    metrics=[task_completion, types.RubricMetric.TOOL_USE_QUALITY]
+)
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Enable telemetry">
+    Set `GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY=true` to capture traces for detailed analysis.
+  </Step>
+  
+  <Step title="Test diverse scenarios">
+    Include edge cases, error conditions, and multi-step tasks in your evaluation dataset.
+  </Step>
+  
+  <Step title="Validate tool calls">
+    Use tool-specific metrics to ensure correct function selection and parameter usage.
+  </Step>
+  
+  <Step title="Review traces">
+    Examine intermediate events to understand agent reasoning and identify failure points.
+  </Step>
+  
+  <Step title="Iterate on instructions">
+    Use evaluation insights to refine agent instructions and improve performance.
+  </Step>
+</Steps>
+
+## Common Issues
+
+### Missing Traces
+
+**Problem**: Evaluation doesn't show intermediate events.
+
+**Solution**: Ensure telemetry is enabled in deployment config:
+
+```python
+config={
+    "env_vars": {"GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY": "true"}
+}
+```
+
+### Tool Call Failures
+
+**Problem**: Agent fails to call tools correctly.
+
+**Solution**: 
+- Verify tool descriptions are clear and specific
+- Check parameter schemas match expected types
+- Review tool_use_quality metric explanations
+
+### Low Evaluation Scores
+
+**Problem**: Metrics show poor performance.
+
+**Solution**:
+- Refine agent instructions
+- Simplify complex tools into smaller functions
+- Add examples to tool descriptions
+- Consider using more capable models
+
+## Example: Complete Agent Evaluation
+
+<CodeGroup>
+```python Complete Example
+import vertexai
+from vertexai import Client, types
+from google.adk import Agent
+import pandas as pd
+import time
+
+# Initialize
+PROJECT_ID = "your-project-id"
+LOCATION = "us-central1"
+
+vertexai.init(project=PROJECT_ID, location=LOCATION)
+client = Client(project=PROJECT_ID, location=LOCATION)
+
+# Define tools
+def get_weather(location: str):
+    return {"temp": 72, "condition": "sunny"}
+
+# Create agent
+agent = Agent(
+    model="gemini-2.5-flash",
+    name="weather_agent",
+    instruction="Help users check weather",
+    tools=[get_weather]
+)
+
+# Deploy
+app = vertexai.agent_engines.AdkApp(agent=agent)
+agent_engine = client.agent_engines.create(
+    agent=app,
+    config={"staging_bucket": "gs://my-bucket"}
+)
+
+# Prepare dataset
+session = types.evals.SessionInput(user_id="user_1", state={})
+dataset = pd.DataFrame({
+    "prompt": ["What's the weather in Seattle?"],
+    "session_inputs": [session]
+})
+
+# Run inference
+inference_result = client.evals.run_inference(
+    agent=agent_engine.api_resource.name,
+    src=dataset
+)
+
+# Evaluate
+agent_info = types.evals.AgentInfo.load_from_agent(
+    agent, agent_engine.api_resource.name
+)
+
+eval_run = client.evals.create_evaluation_run(
+    dataset=inference_result,
+    agent_info=agent_info,
+    metrics=[
+        types.RubricMetric.FINAL_RESPONSE_QUALITY,
+        types.RubricMetric.TOOL_USE_QUALITY
+    ],
+    dest="gs://my-bucket/results"
+)
+
+# Wait for completion
+while eval_run.state not in {"SUCCEEDED", "FAILED"}:
+    eval_run = client.evals.get_evaluation_run(name=eval_run.name)
+    time.sleep(5)
+
+eval_run.show()
+```
+</CodeGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Model Migration" icon="shuffle" href="/advanced/evaluation/model-migration">
+    Compare models for agent migration decisions
+  </Card>
+  <Card title="View in Console" icon="desktop" href="https://cloud.google.com/vertex-ai/generative-ai/docs/models/view-evaluation">
+    Access evaluation results in Vertex AI UI
+  </Card>
+  <Card title="Agent Development" icon="code" href="https://cloud.google.com/agent-builder/agent-engine/develop/adk">
+    Learn more about building agents with ADK
+  </Card>
+  <Card title="Custom Metrics" icon="ruler" href="https://cloud.google.com/vertex-ai/generative-ai/docs/models/determine-eval">
+    Create custom evaluation metrics
+  </Card>
+</CardGroup>

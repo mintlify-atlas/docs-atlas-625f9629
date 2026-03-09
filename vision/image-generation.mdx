@@ -1,0 +1,433 @@
+---
+title: 'Image Generation'
+description: 'Generate high-quality images from text prompts using Imagen and Gemini models'
+---
+
+## Overview
+
+Text-to-image generation allows you to create images from natural language descriptions. Google Cloud offers two powerful options:
+
+- **Imagen 4**: Specialized text-to-image model with exceptional quality and text rendering
+- **Gemini 2.5 Flash Image**: Multimodal model supporting conversational image generation
+
+## Imagen 4 Image Generation
+
+### Basic Text-to-Image
+
+Generate images using the Imagen 4 model with simple text prompts:
+
+```python
+from google import genai
+from google.genai import types
+
+client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+
+prompt = """
+A white wall with two Art Deco travel posters mounted. 
+First poster has the text: "NEPTUNE", tagline: "The jewel of the solar system!" 
+Second poster has the text: "JUPITER", tagline: "Travel with the giants!"
+"""
+
+image = client.models.generate_images(
+    model="imagen-4.0-generate-001",
+    prompt=prompt,
+    config=types.GenerateImagesConfig(
+        aspect_ratio="16:9",
+        number_of_images=1,
+        image_size="2K",
+        safety_filter_level="BLOCK_MEDIUM_AND_ABOVE",
+        person_generation="ALLOW_ADULT",
+    ),
+)
+
+# Display the generated image
+display_image(image.generated_images[0].image)
+```
+
+### Model Variants
+
+<Tabs>
+  <Tab title="Imagen 4">
+    **Best for**: High-quality images with natural lighting and photorealism
+    
+    ```python
+    image = client.models.generate_images(
+        model="imagen-4.0-generate-001",
+        prompt="New York skyline at sunset",
+        config=types.GenerateImagesConfig(
+            number_of_images=1,
+            aspect_ratio="3:4",
+            image_size="2K",
+        ),
+    )
+    ```
+  </Tab>
+  
+  <Tab title="Imagen 4 Fast">
+    **Best for**: Brighter images with higher contrast and faster generation
+    
+    ```python
+    image = client.models.generate_images(
+        model="imagen-4.0-fast-generate-001",
+        prompt="New York skyline at sunset",
+        config=types.GenerateImagesConfig(
+            number_of_images=1,
+            aspect_ratio="3:4",
+            image_size="2K",
+        ),
+    )
+    ```
+  </Tab>
+  
+  <Tab title="Imagen 4 Ultra">
+    **Best for**: Exceptional quality with maximum photorealism
+    
+    ```python
+    prompt = """
+    Photorealistic night scene: looking into a brightly lit, classic 1960s 
+    American diner from the cold street outside. The entire view is filtered 
+    through a large pane of glass streaked with rainwater.
+    """
+    
+    image = client.models.generate_images(
+        model="imagen-4.0-ultra-generate-001",
+        prompt=prompt,
+        config=types.GenerateImagesConfig(
+            aspect_ratio="1:1",
+            image_size="2K",
+        ),
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## Configuration Options
+
+### Aspect Ratios
+
+Imagen 4 supports the following aspect ratios:
+
+- `1:1` - Square images
+- `3:2` / `2:3` - Standard photo dimensions
+- `4:3` / `3:4` - Classic monitor aspect ratio
+- `16:9` / `9:16` - Widescreen and mobile-friendly
+- `4:5` / `5:4` - Social media optimized
+- `21:9` - Ultra-wide cinematic
+
+### Image Size
+
+Control output resolution with the `image_size` parameter:
+
+- `1K`: 1024px on the longer dimension
+- `2K`: 2048px on the longer dimension (higher quality)
+
+```python
+config=types.GenerateImagesConfig(
+    aspect_ratio="16:9",
+    image_size="2K",  # Higher resolution
+    number_of_images=1,
+)
+```
+
+### Number of Images
+
+Generate multiple variations in a single request (1-4 images):
+
+```python
+config=types.GenerateImagesConfig(
+    number_of_images=4,  # Generate 4 variations
+)
+```
+
+## Advanced Features
+
+### Multilingual Prompt Support
+
+Imagen 4 processes prompts in multiple languages:
+
+<CodeGroup>
+```python Spanish
+prompt = """
+Una pintura al óleo impresionista de una taza de café sobre una mesa 
+en una cocina, con las palabras 'buenos días' escritas en una fuente 
+caprichosa en la taza.
+"""
+
+image = client.models.generate_images(
+    model="imagen-4.0-generate-001",
+    prompt=prompt,
+    config=types.GenerateImagesConfig(
+        aspect_ratio="1:1",
+        enhance_prompt=True,  # Enhance the prompt
+    ),
+)
+```
+
+```python Japanese
+prompt = "桜の木の下でお茶を飲む猫"
+
+image = client.models.generate_images(
+    model="imagen-4.0-generate-001",
+    prompt=prompt,
+)
+```
+</CodeGroup>
+
+<Note>
+  Supported languages: English, Spanish, French, German, Portuguese, Chinese (Simplified/Traditional), Japanese, Korean, and Hindi.
+</Note>
+
+### Prompt Enhancement
+
+Enable automatic prompt enhancement to generate more detailed descriptions:
+
+```python
+image = client.models.generate_images(
+    model="imagen-4.0-generate-001",
+    prompt="a coffee cup on a kitchen table",
+    config=types.GenerateImagesConfig(
+        enhance_prompt=True,  # AI will enhance your prompt
+    ),
+)
+
+# View the enhanced prompt
+print(image.generated_images[0].enhanced_prompt)
+```
+
+### Text Rendering
+
+Imagen 4 excels at rendering text within images:
+
+```python
+prompt = """
+A panel of a comic strip. A cute gray cat is talking to a bulldog. 
+The cat says in a talk bubble: "You really seem to enjoy going outside. 
+Fascinating." Well-articulated illustration with confident lines and shading.
+"""
+
+image = client.models.generate_images(
+    model="imagen-4.0-generate-001",
+    prompt=prompt,
+    config=types.GenerateImagesConfig(
+        aspect_ratio="4:3",
+        image_size="2K",
+    ),
+)
+```
+
+**Use cases for text rendering:**
+- Comic strips and graphic novels
+- Logos and branding materials
+- Posters and flyers
+- Infographics and flowcharts
+- Social media graphics
+
+## Gemini Image Generation
+
+### Text-to-Image
+
+Generate images using Gemini 2.5 Flash Image:
+
+```python
+from google.genai.types import GenerateContentConfig, ImageConfig
+
+MODEL_ID = "gemini-2.5-flash-image"
+
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents="a cartoon infographic on flying sneakers",
+    config=GenerateContentConfig(
+        response_modalities=["IMAGE"],
+        image_config=ImageConfig(
+            aspect_ratio="9:16",
+        ),
+        candidate_count=1,
+    ),
+)
+
+# Display the result
+for part in response.candidates[0].content.parts:
+    if part.inline_data:
+        display(Image(data=part.inline_data.data))
+```
+
+### Interleaved Text and Images
+
+Generate tutorials or guides with mixed text and images:
+
+```python
+prompt = """
+Create a tutorial explaining how to make a peanut butter and jelly 
+sandwich in three easy steps. For each step, provide a title with 
+the number of the step, an explanation, and also generate an image 
+to illustrate the content.
+"""
+
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=prompt,
+    config=GenerateContentConfig(
+        response_modalities=["TEXT", "IMAGE"],  # Both modalities
+        image_config=ImageConfig(
+            aspect_ratio="4:3",
+        ),
+    ),
+)
+
+# Display interleaved content
+for part in response.candidates[0].content.parts:
+    if part.text:
+        display(Markdown(part.text))
+    if part.inline_data:
+        display(Image(data=part.inline_data.data))
+```
+
+<Note>
+  This feature is perfect for creating recipes, how-to guides, product documentation, and educational content.
+</Note>
+
+## Prompt Engineering Best Practices
+
+### Be Specific and Descriptive
+
+<CodeGroup>
+```python Basic
+prompt = "a dog"
+```
+
+```python Detailed
+prompt = """
+A golden retriever puppy sitting in a sunny meadow filled with 
+wildflowers, soft morning light, photorealistic, shallow depth of field
+"""
+```
+</CodeGroup>
+
+### Specify Style and Mood
+
+Include artistic style, lighting, and atmosphere:
+
+```python
+prompt = """
+A cozy coffee shop interior, warm ambient lighting, impressionist 
+painting style, soft brush strokes, muted earth tones, late afternoon 
+atmosphere
+"""
+```
+
+### Use Technical Photography Terms
+
+```python
+prompt = """
+Portrait of a woman, 85mm lens, f/1.4 aperture, shallow depth of field,
+natural window lighting, golden hour, professional studio quality
+"""
+```
+
+### Request Text Placement
+
+For text rendering, be explicit about placement and style:
+
+```python
+prompt = """
+A vintage travel poster with the text 'VISIT MARS' in bold Art Deco 
+lettering at the top, and the tagline 'The Red Planet Awaits' in 
+elegant script at the bottom
+"""
+```
+
+## Safety Controls
+
+### Person Generation Settings
+
+Control whether people appear in generated images:
+
+```python
+config=types.GenerateImagesConfig(
+    person_generation="DONT_ALLOW",     # No people
+    # person_generation="ALLOW_ADULT",  # Adults only
+    # person_generation="ALLOW_ALL",    # All ages
+)
+```
+
+### Safety Filter Levels
+
+Adjust content filtering sensitivity:
+
+```python
+config=types.GenerateImagesConfig(
+    safety_filter_level="BLOCK_MEDIUM_AND_ABOVE",
+    # Options:
+    # - BLOCK_LOW_AND_ABOVE (strictest)
+    # - BLOCK_MEDIUM_AND_ABOVE (default)
+    # - BLOCK_ONLY_HIGH
+    # - BLOCK_NONE (permissive)
+)
+```
+
+<Warning>
+  Choose safety settings appropriate for your application's audience and use case.
+</Warning>
+
+## Watermarking
+
+By default, all Imagen 4 images include a [SynthID](https://deepmind.google/technologies/synthid/) digital watermark:
+
+```python
+config=types.GenerateImagesConfig(
+    add_watermark=True,  # Default behavior
+)
+```
+
+You can verify watermarked images using [Vertex AI Studio](https://cloud.google.com/vertex-ai/generative-ai/docs/image/generate-images#watermark).
+
+## Complete Example
+
+Here's a complete example generating a high-quality image:
+
+```python
+from google import genai
+from google.genai import types
+import IPython.display
+
+# Initialize client
+PROJECT_ID = "your-project-id"
+LOCATION = "us-central1"
+client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+
+# Generate image
+prompt = """
+Design an elegant movie poster for 'The Crimson Thread'. 
+A close-up shot of two hands almost touching, with a vibrant 
+crimson thread winding between their fingers. The title 'The Crimson Thread' 
+should appear in flowy hand-stitched embroidery style. 
+Soft-focus garden background.
+"""
+
+image = client.models.generate_images(
+    model="imagen-4.0-generate-001",
+    prompt=prompt,
+    config=types.GenerateImagesConfig(
+        aspect_ratio="1:1",
+        image_size="2K",
+        number_of_images=1,
+        safety_filter_level="BLOCK_MEDIUM_AND_ABOVE",
+        person_generation="ALLOW_ADULT",
+        add_watermark=True,
+    ),
+)
+
+# Display result
+IPython.display.display(image.generated_images[0].image._pil_image)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Image Editing" icon="pen-to-square" href="/vision/image-editing">
+    Learn how to edit and modify existing images
+  </Card>
+  <Card title="Visual Q&A" icon="comments" href="/vision/visual-qa">
+    Understand and analyze images with Gemini
+  </Card>
+</CardGroup>

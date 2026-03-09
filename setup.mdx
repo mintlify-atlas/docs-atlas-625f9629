@@ -1,0 +1,242 @@
+---
+title: "Environment Setup"
+description: "Configure your Google Cloud project and set up the Vertex AI SDK for Gemini development"
+---
+
+This guide will help you set up your development environment for building generative AI applications with Gemini on Google Cloud.
+
+## Prerequisites
+
+Before you begin, you'll need:
+
+- A Google account
+- Basic familiarity with Python and command-line tools
+- (Optional) A credit card for Google Cloud billing - new accounts receive a $300 free credit
+
+## Setup Steps
+
+<Steps>
+  <Step title="Create or Select a Google Cloud Project">
+    Every Google Cloud resource belongs to a project. You'll need one to use Vertex AI.
+
+    1. Go to the [Google Cloud Console](https://console.cloud.google.com/cloud-resource-manager)
+    2. Click **Create Project** or select an existing project
+    3. Give your project a name (e.g., "gemini-quickstart")
+    4. Note your **Project ID** - you'll need this later
+
+    <Note>
+    When you create a new Google Cloud account, you receive a $300 credit to explore and evaluate Google Cloud services.
+    </Note>
+  </Step>
+
+  <Step title="Enable Billing">
+    Google Cloud requires billing to be enabled, even if you're using free credits.
+
+    1. Follow the [billing setup guide](https://cloud.google.com/billing/docs/how-to/modify-project)
+    2. Link your project to a billing account
+
+    <Tip>
+    You won't be charged unless you exceed the free tier limits. The Vertex AI free tier includes generous quotas for experimentation.
+    </Tip>
+  </Step>
+
+  <Step title="Enable Required APIs">
+    Enable the Vertex AI and Cloud Storage APIs for your project:
+
+    1. Visit the [API enablement page](https://console.cloud.google.com/flows/enableapi?apiid=aiplatform.googleapis.com,storage.googleapis.com)
+    2. Select your project
+    3. Click **Enable**
+
+    Alternatively, use the gcloud CLI:
+
+    ```bash
+    gcloud services enable aiplatform.googleapis.com
+    gcloud services enable storage.googleapis.com
+    ```
+  </Step>
+
+  <Step title="Install the Vertex AI SDK">
+    Install the Google Gen AI SDK for Python, which provides a unified interface to Gemini models:
+
+    ```bash
+    pip install --upgrade google-genai
+    ```
+
+    <Note>
+    For production applications, consider using a virtual environment:
+    ```bash
+    python -m venv gemini-env
+    source gemini-env/bin/activate  # On Windows: gemini-env\Scripts\activate
+    pip install --upgrade google-genai
+    ```
+    </Note>
+  </Step>
+
+  <Step title="Set Up Authentication">
+    Choose one of the following authentication methods based on your environment:
+
+    ### For Local Development
+
+    Install the Google Cloud SDK and authenticate:
+
+    ```bash
+    # Install gcloud CLI: https://cloud.google.com/sdk/docs/install
+    gcloud auth application-default login
+    ```
+
+    This creates local credentials that the SDK will automatically use.
+
+    ### For Google Colab
+
+    If you're using Google Colab notebooks, authenticate with:
+
+    ```python
+    from google.colab import auth
+    auth.authenticate_user()
+    ```
+
+    ### For Production
+
+    Use a service account with appropriate IAM permissions:
+
+    1. [Create a service account](https://cloud.google.com/iam/docs/service-accounts-create)
+    2. Grant the **Vertex AI User** role
+    3. Download the JSON key file
+    4. Set the environment variable:
+
+    ```bash
+    export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account-key.json"
+    ```
+  </Step>
+
+  <Step title="Initialize the SDK">
+    In your Python code, initialize the SDK with your project ID and location:
+
+    ```python
+    from google import genai
+
+    PROJECT_ID = "your-project-id"  # Replace with your project ID
+    LOCATION = "us-central1"         # Or your preferred region
+
+    client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+    ```
+
+    <Tip>
+    **Available Locations**: Gemini models are available in multiple regions including `us-central1`, `us-east4`, `europe-west1`, and `asia-southeast1`. See the [full list of supported locations](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/locations).
+    </Tip>
+  </Step>
+</Steps>
+
+## Development Environments
+
+### Google Colab
+
+[Google Colab](https://colab.research.google.com/) provides free access to GPUs and requires minimal setup:
+
+1. No installation required - runs in your browser
+2. Free tier includes CPU and GPU runtimes
+3. Perfect for learning and prototyping
+4. Automatically authenticates with your Google account
+
+### Vertex AI Workbench
+
+[Vertex AI Workbench](https://cloud.google.com/vertex-ai/docs/workbench/introduction) is Google Cloud's managed notebook environment:
+
+1. Pre-configured with ML libraries
+2. No additional authentication needed
+3. Integrated with Google Cloud services
+4. Supports both JupyterLab and managed notebooks
+
+**To create a Workbench instance:**
+
+1. Go to [Vertex AI Workbench](https://console.cloud.google.com/vertex-ai/workbench)
+2. Click **Create New** → **User-Managed Notebook**
+3. Choose Python 3 environment
+4. Click **Create**
+
+### Local Development
+
+For local development on your machine:
+
+1. Install Python 3.8 or higher
+2. Install the Google Cloud SDK
+3. Use your preferred IDE (VS Code, PyCharm, etc.)
+4. Follow the authentication steps above
+
+## Verify Your Setup
+
+Test that everything is working with this simple script:
+
+```python
+from google import genai
+from google.genai import types
+
+# Initialize client
+client = genai.Client(
+    vertexai=True,
+    project="your-project-id",
+    location="us-central1"
+)
+
+# Test with a simple prompt
+response = client.models.generate_content(
+    model="gemini-2.0-flash-exp",
+    contents="Say hello!"
+)
+
+print(response.text)
+```
+
+If you see a friendly greeting, you're all set!
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Authentication errors">
+    **Error**: `DefaultCredentialsError` or `Could not automatically determine credentials`
+
+    **Solution**: Run `gcloud auth application-default login` or set `GOOGLE_APPLICATION_CREDENTIALS` environment variable.
+  </Accordion>
+
+  <Accordion title="API not enabled">
+    **Error**: `Vertex AI API has not been used in project...`
+
+    **Solution**: Enable the Vertex AI API at https://console.cloud.google.com/apis/library/aiplatform.googleapis.com
+  </Accordion>
+
+  <Accordion title="Permission denied">
+    **Error**: `Permission denied` or `403 Forbidden`
+
+    **Solution**: Ensure your account has the **Vertex AI User** role. Add it in [IAM Settings](https://console.cloud.google.com/iam-admin/iam).
+  </Accordion>
+
+  <Accordion title="Quota exceeded">
+    **Error**: `Quota exceeded` or `429 Too Many Requests`
+
+    **Solution**: Check your [quota limits](https://console.cloud.google.com/iam-admin/quotas) and request increases if needed. Consider using exponential backoff in your code.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart Tutorial" icon="rocket" href="/quickstart">
+    Build your first Gemini application in minutes
+  </Card>
+  <Card title="Gemini Models" icon="sparkles" href="/gemini/overview">
+    Explore the full Gemini model family
+  </Card>
+  <Card title="Multimodal Capabilities" icon="images" href="/gemini/multimodal">
+    Learn to process text, images, audio, and video
+  </Card>
+  <Card title="Function Calling" icon="code" href="/gemini/function-calling">
+    Connect Gemini to external tools and APIs
+  </Card>
+</CardGroup>
+
+## Additional Resources
+
+- [Vertex AI Documentation](https://cloud.google.com/vertex-ai/docs)
+- [Google Gen AI SDK Reference](https://github.com/googleapis/python-genai)
+- [Gemini API Documentation](https://cloud.google.com/vertex-ai/generative-ai/docs/model-reference/gemini)
+- [Pricing Information](https://cloud.google.com/vertex-ai/generative-ai/pricing)

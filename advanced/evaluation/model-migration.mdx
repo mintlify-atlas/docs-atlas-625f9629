@@ -1,0 +1,607 @@
+---
+title: Model Migration & Comparison
+description: Compare foundation models and make data-driven migration decisions using evaluation metrics
+---
+
+# Model Migration & Comparison
+
+When migrating between models or selecting the best model for your use case, evaluation provides objective evidence to guide your decision. This guide demonstrates how to compare models systematically.
+
+## Why Compare Models
+
+Model comparison helps you:
+
+- **Make informed decisions**: Use data instead of intuition
+- **Validate upgrades**: Ensure new models perform better
+- **Optimize costs**: Balance performance with pricing
+- **Meet requirements**: Verify models meet your quality standards
+- **Support migration**: Smooth transition from legacy models
+
+## Migration Scenarios
+
+### Common Migration Paths
+
+<CardGroup cols={2}>
+  <Card title="PaLM to Gemini" icon="arrow-right">
+    Upgrade from legacy PaLM models to modern Gemini models
+  </Card>
+  <Card title="Model Versions" icon="code-branch">
+    Compare different versions of the same model (e.g., Gemini 1.5 to 2.0)
+  </Card>
+  <Card title="Size Variants" icon="arrows-left-right">
+    Balance performance vs. cost (Flash vs. Pro)
+  </Card>
+  <Card title="Custom Models" icon="wand-magic-sparkles">
+    Evaluate fine-tuned models against base models
+  </Card>
+</CardGroup>
+
+## Evaluation Setup
+
+### Installation
+
+```bash
+pip install --upgrade google-cloud-aiplatform[evaluation]
+```
+
+### Initialize Vertex AI
+
+```python
+import vertexai
+from vertexai.evaluation import EvalTask
+from vertexai.generative_models import GenerativeModel
+from vertexai.preview.evaluation import notebook_utils
+import pandas as pd
+
+PROJECT_ID = "your-project-id"
+LOCATION = "us-central1"
+
+vertexai.init(project=PROJECT_ID, location=LOCATION)
+```
+
+## Preparing Evaluation Data
+
+### Create Representative Dataset
+
+Use real examples from your use case:
+
+```python
+instruction = "Summarize the following article: "
+
+contexts = [
+    "To make classic spaghetti carbonara, start by bringing salted water to a boil. Cook pancetta in olive oil until crispy. Whisk eggs and Parmesan cheese. Toss cooked pasta with the egg mixture and pasta water to create a creamy sauce.",
+    "Preparing perfect risotto requires patience. Heat butter, add chopped onions and garlic, cook until soft. Add Arborio rice and toast. Add white wine, then gradually add hot broth while stirring until creamy.",
+    "For flavorful grilled steak, season ribeye generously with salt and pepper. Preheat grill to high heat. Grill for 4-5 minutes per side for medium-rare. Let rest before slicing.",
+    "Creating homemade tomato soup starts with heating olive oil. Sauté onions and garlic until fragrant. Add chopped tomatoes, broth, and basil. Simmer for 20-30 minutes. Puree until smooth and season.",
+    "To bake chocolate cake, cream butter and sugar until fluffy. Beat in eggs one at a time. Alternate adding dry ingredients and buttermilk. Bake at 350°F for 25-30 minutes."
+]
+
+references = [
+    "Making spaghetti carbonara involves boiling pasta, crisping pancetta, whisking eggs and Parmesan, and tossing everything together.",
+    "Preparing risotto entails sautéing aromatics, toasting rice, adding wine and broth gradually, and stirring until creamy.",
+    "Grilling steak involves seasoning generously, preheating the grill, cooking to desired doneness, and resting before slicing.",
+    "Creating tomato soup includes sautéing aromatics, simmering with tomatoes and broth, pureeing, and seasoning.",
+    "Baking chocolate cake requires creaming butter and sugar, beating in eggs, alternating dry ingredients with buttermilk, and baking."
+]
+
+eval_dataset = pd.DataFrame({
+    "prompt": [instruction + ctx for ctx in contexts],
+    "reference": references
+})
+```
+
+<Note>
+Use at least 100 examples for statistically significant results. These 5 examples are for demonstration.
+</Note>
+
+### Select Evaluation Metrics
+
+Choose metrics aligned with your quality requirements:
+
+```python
+metrics = [
+    # Reference-based metrics
+    "rouge_l_sum",
+    "bleu",
+    
+    # Model-based metrics
+    "fluency",
+    "coherence",
+    "safety",
+    "groundedness",
+    "verbosity",
+    "text_quality",
+    "summarization_quality"
+]
+```
+
+## Comparing Two Models
+
+### Example: PaLM to Gemini Migration
+
+<Steps>
+  <Step title="Create EvalTask">
+    Define the evaluation task with your dataset and metrics:
+    
+    ```python
+    experiment_name = "palm-to-gemini-migration"
+    
+    eval_task = EvalTask(
+        dataset=eval_dataset,
+        metrics=metrics,
+        experiment=experiment_name
+    )
+    ```
+  </Step>
+  
+  <Step title="Evaluate PaLM Model">
+    Test the legacy model:
+    
+    ```python
+    from vertexai.language_models import TextGenerationModel
+    
+    generation_config = {
+        "temperature": 0.5,
+        "max_output_tokens": 256,
+        "top_k": 1
+    }
+    
+    # Initialize PaLM model
+    palm_model = TextGenerationModel.from_pretrained("text-bison@001")
+    
+    def palm_predict(prompt):
+        return palm_model.predict(prompt, **generation_config).text
+    
+    # Run evaluation
+    palm_result = eval_task.evaluate(
+        model=palm_predict,
+        experiment_run_name="eval-palm-text-bison",
+        evaluation_service_qps=5
+    )
+    ```
+  </Step>
+  
+  <Step title="Evaluate Gemini Model">
+    Test the newer model:
+    
+    ```python
+    # Initialize Gemini model
+    gemini_model = GenerativeModel(
+        "gemini-2.0-flash",
+        generation_config=generation_config
+    )
+    
+    # Run evaluation
+    gemini_result = eval_task.evaluate(
+        model=gemini_model,
+        experiment_run_name="eval-gemini-2.0-flash",
+        evaluation_service_qps=5
+    )
+    ```
+  </Step>
+  
+  <Step title="Compare Results">
+    Visualize the comparison:
+    
+    ```python
+    results = [
+        ("text-bison", palm_result),
+        ("gemini-2.0-flash", gemini_result)
+    ]
+    
+    # Display individual results
+    notebook_utils.display_eval_result(
+        eval_result=palm_result,
+        title="PaLM text-bison"
+    )
+    
+    notebook_utils.display_eval_result(
+        eval_result=gemini_result,
+        title="Gemini 2.0 Flash"
+    )
+    ```
+  </Step>
+</Steps>
+
+## Visualization
+
+### Radar Plot Comparison
+
+Compare qualitative metrics:
+
+```python
+notebook_utils.display_radar_plot(
+    results,
+    metrics=[
+        "fluency",
+        "coherence",
+        "safety",
+        "groundedness",
+        "verbosity",
+        "text_quality",
+        "summarization_quality"
+    ]
+)
+```
+
+Radar plots show at a glance which model excels at which dimensions.
+
+### Bar Plot Comparison
+
+Compare quantitative metrics:
+
+```python
+notebook_utils.display_bar_plot(
+    results,
+    metrics=["rouge_l_sum", "bleu"]
+)
+```
+
+Bar plots highlight performance differences in reference-based metrics.
+
+## Comparing Multiple Models
+
+Evaluate several candidates simultaneously:
+
+```python
+models_to_compare = [
+    ("gemini-2.0-flash", GenerativeModel("gemini-2.0-flash")),
+    ("gemini-1.5-flash", GenerativeModel("gemini-1.5-flash")),
+    ("gemini-1.5-pro", GenerativeModel("gemini-1.5-pro"))
+]
+
+all_results = []
+
+for name, model in models_to_compare:
+    result = eval_task.evaluate(
+        model=model,
+        experiment_run_name=f"eval-{name}"
+    )
+    all_results.append((name, result))
+    
+# Compare all models
+notebook_utils.display_radar_plot(
+    all_results,
+    metrics=["coherence", "fluency", "safety", "text_quality"]
+)
+```
+
+## Comparing Model Configurations
+
+Test different settings for the same model:
+
+```python
+configurations = [
+    {"name": "low-temp", "temperature": 0.2},
+    {"name": "medium-temp", "temperature": 0.5},
+    {"name": "high-temp", "temperature": 0.9}
+]
+
+config_results = []
+
+for config in configurations:
+    model = GenerativeModel(
+        "gemini-2.0-flash",
+        generation_config={"temperature": config["temperature"]}
+    )
+    
+    result = eval_task.evaluate(
+        model=model,
+        experiment_run_name=f"eval-{config['name']}"
+    )
+    
+    config_results.append((config["name"], result))
+
+notebook_utils.display_bar_plot(
+    config_results,
+    metrics=["coherence", "fluency"]
+)
+```
+
+## Interpretation Guidelines
+
+### Understanding Metric Scores
+
+<Tabs>
+  <Tab title="Model-Based Metrics">
+    **Scale**: 1-5
+    
+    - **5**: Excellent - Exceeds expectations
+    - **4**: Good - Meets most requirements
+    - **3**: Fair - Acceptable with room for improvement
+    - **2**: Poor - Below standards
+    - **1**: Very Poor - Unacceptable
+    
+    Focus on:
+    - Mean scores across dataset
+    - Standard deviation (consistency)
+    - Per-example explanations
+  </Tab>
+  
+  <Tab title="ROUGE">
+    **Scale**: 0-1 (higher is better)
+    
+    - **0.5+**: Strong overlap with reference
+    - **0.3-0.5**: Moderate similarity
+    - **Less than 0.3**: Limited similarity
+    
+    ROUGE emphasizes recall - capturing reference content.
+  </Tab>
+  
+  <Tab title="BLEU">
+    **Scale**: 0-1 (higher is better)
+    
+    - **0.4+**: High quality translation/generation
+    - **0.2-0.4**: Moderate quality
+    - **Less than 0.2**: Low quality
+    
+    BLEU emphasizes precision - exact matching.
+  </Tab>
+</Tabs>
+
+### Making Migration Decisions
+
+<Steps>
+  <Step title="Compare summary metrics">
+    Look at mean scores across all evaluation examples. The model with consistently higher scores across important metrics is generally preferable.
+  </Step>
+  
+  <Step title="Assess consistency">
+    Check standard deviations. Lower variance indicates more predictable performance.
+  </Step>
+  
+  <Step title="Review edge cases">
+    Examine low-scoring examples. Are failures acceptable for your use case?
+  </Step>
+  
+  <Step title="Consider costs">
+    Balance performance improvements against pricing differences:
+    
+    - Flash models: Faster, cheaper, good for most tasks
+    - Pro models: Higher quality, more expensive, better for complex tasks
+  </Step>
+  
+  <Step title="Test in production">
+    Use evaluation to shortlist candidates, then A/B test with real users.
+  </Step>
+</Steps>
+
+## Example Decision Matrix
+
+| Model | Coherence | Fluency | ROUGE | Cost | Latency | Recommendation |
+|-------|-----------|---------|-------|------|---------|----------------|
+| text-bison | 3.2 | 3.6 | 0.23 | $ | 800ms | Baseline |
+| gemini-2.0-flash | 4.0 | 4.6 | 0.33 | $ | 400ms | ✅ **Recommended** |
+| gemini-1.5-pro | 4.4 | 4.8 | 0.36 | $$$ | 1200ms | High-quality use cases |
+
+## Advanced Comparison
+
+### Prompt Variations
+
+Test how models respond to different prompt styles:
+
+```python
+prompt_styles = [
+    ("direct", "Summarize: {context}"),
+    ("detailed", "Please provide a concise summary of: {context}"),
+    ("structured", "Create a summary with key points from: {context}")
+]
+
+for style_name, template in prompt_styles:
+    style_dataset = pd.DataFrame({
+        "prompt": [template.format(context=ctx) for ctx in contexts],
+        "reference": references
+    })
+    
+    eval_task = EvalTask(
+        dataset=style_dataset,
+        metrics=metrics,
+        experiment=f"prompt-style-{style_name}"
+    )
+    
+    result = eval_task.evaluate(model=gemini_model)
+```
+
+### Domain-Specific Comparison
+
+Evaluate models on your specific domain:
+
+```python
+# Healthcare example
+healthcare_dataset = pd.DataFrame({
+    "prompt": [
+        "Explain type 2 diabetes to a patient",
+        "What are symptoms of hypertension?"
+    ],
+    "reference": [
+        "Type 2 diabetes affects how your body processes blood sugar...",
+        "Hypertension symptoms include headaches, shortness of breath..."
+    ]
+})
+
+eval_task = EvalTask(
+    dataset=healthcare_dataset,
+    metrics=["coherence", "safety", "text_quality"],
+    experiment="healthcare-comparison"
+)
+
+# Compare models on domain data
+results = []
+for name, model in models_to_compare:
+    result = eval_task.evaluate(model=model)
+    results.append((name, result))
+```
+
+## Tracking Over Time
+
+### Experiments for Version Control
+
+Organize evaluations by experiment:
+
+```python
+eval_task = EvalTask(
+    dataset=eval_dataset,
+    metrics=metrics,
+    experiment="production-model-evaluation"
+)
+
+# Weekly evaluation runs
+result_week1 = eval_task.evaluate(
+    model=model,
+    experiment_run_name="2024-03-week1"
+)
+
+result_week2 = eval_task.evaluate(
+    model=model,
+    experiment_run_name="2024-03-week2"
+)
+
+# Compare across time
+eval_task.display_runs()
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Production Data" icon="database">
+    Evaluate on real examples from your application for accurate assessment
+  </Card>
+  <Card title="Multiple Metrics" icon="chart-mixed">
+    No single metric tells the full story - use a balanced set
+  </Card>
+  <Card title="Sufficient Examples" icon="hashtag">
+    100+ examples provide statistical significance
+  </Card>
+  <Card title="Version Control" icon="code-branch">
+    Track evaluations over time to measure improvements
+  </Card>
+  <Card title="Cost Consideration" icon="dollar-sign">
+    Factor in pricing when comparing similar performance
+  </Card>
+  <Card title="Stakeholder Input" icon="users">
+    Involve domain experts in interpreting results
+  </Card>
+</CardGroup>
+
+## Common Pitfalls
+
+### Small Dataset
+
+❌ **Problem**: Testing with only 5-10 examples
+
+✅ **Solution**: Use at least 100 representative examples
+
+### Single Metric Focus
+
+❌ **Problem**: Deciding based only on ROUGE or coherence
+
+✅ **Solution**: Evaluate multiple complementary metrics
+
+### Ignoring Edge Cases
+
+❌ **Problem**: Only looking at average scores
+
+✅ **Solution**: Review worst-performing examples
+
+### No Baseline
+
+❌ **Problem**: Evaluating new model without comparing to current
+
+✅ **Solution**: Always evaluate baseline for context
+
+## Example: Complete Migration Workflow
+
+<CodeGroup>
+```python Complete Example
+import vertexai
+from vertexai.evaluation import EvalTask
+from vertexai.generative_models import GenerativeModel
+from vertexai.language_models import TextGenerationModel
+from vertexai.preview.evaluation import notebook_utils
+import pandas as pd
+
+# Initialize
+PROJECT_ID = "your-project-id"
+vertexai.init(project=PROJECT_ID, location="us-central1")
+
+# Prepare dataset (use 100+ examples in production)
+eval_dataset = pd.DataFrame({
+    "prompt": ["Summarize: " + text for text in contexts],
+    "reference": references
+})
+
+# Define metrics
+metrics = [
+    "rouge_l_sum", "bleu", "coherence", "fluency",
+    "safety", "groundedness", "text_quality"
+]
+
+# Create evaluation task
+eval_task = EvalTask(
+    dataset=eval_dataset,
+    metrics=metrics,
+    experiment="production-migration"
+)
+
+# Evaluate current model (PaLM)
+palm_model = TextGenerationModel.from_pretrained("text-bison@001")
+palm_fn = lambda p: palm_model.predict(p, temperature=0.5).text
+
+palm_result = eval_task.evaluate(
+    model=palm_fn,
+    experiment_run_name="baseline-palm"
+)
+
+# Evaluate candidate model (Gemini)
+gemini_model = GenerativeModel("gemini-2.0-flash")
+
+gemini_result = eval_task.evaluate(
+    model=gemini_model,
+    experiment_run_name="candidate-gemini"
+)
+
+# Compare
+results = [
+    ("Current: PaLM", palm_result),
+    ("Candidate: Gemini", gemini_result)
+]
+
+print("Model Comparison Results:")
+notebook_utils.display_radar_plot(
+    results,
+    metrics=["coherence", "fluency", "safety", "text_quality"]
+)
+
+notebook_utils.display_bar_plot(
+    results,
+    metrics=["rouge_l_sum", "bleu"]
+)
+
+# Make decision
+palm_coherence = palm_result.summary_metrics["coherence/mean"]
+gemini_coherence = gemini_result.summary_metrics["coherence/mean"]
+
+if gemini_coherence > palm_coherence:
+    print("✅ Recommendation: Migrate to Gemini")
+    print(f"   Coherence improvement: {gemini_coherence - palm_coherence:.2f}")
+else:
+    print("⚠️ Recommendation: Stay with PaLM")
+```
+</CodeGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="View Results" icon="chart-line" href="https://cloud.google.com/vertex-ai/generative-ai/docs/models/view-evaluation">
+    Access evaluation reports in Vertex AI console
+  </Card>
+  <Card title="Evaluation Overview" icon="book" href="/advanced/evaluation/overview">
+    Learn more about evaluation concepts
+  </Card>
+  <Card title="Model Garden" icon="leaf" href="https://cloud.google.com/model-garden">
+    Explore available models
+  </Card>
+  <Card title="Pricing" icon="dollar-sign" href="https://cloud.google.com/vertex-ai/generative-ai/pricing">
+    Compare model costs
+  </Card>
+</CardGroup>

@@ -1,0 +1,350 @@
+---
+title: 'Document Processing'
+description: 'Extract, classify, summarize, and analyze documents using Gemini multimodal capabilities'
+---
+
+## Overview
+
+Document processing with Gemini enables you to extract structured information, classify document types, answer questions, summarize content, and translate documents using natural language prompts. Gemini's native PDF processing means you can work directly with documents without complex preprocessing.
+
+## Key Capabilities
+
+<CardGroup cols={2}>
+  <Card title="Entity Extraction" icon="magnifying-glass">
+    Extract structured data from invoices, forms, and contracts
+  </Card>
+  <Card title="Document Classification" icon="tags">
+    Automatically categorize documents by type
+  </Card>
+  <Card title="Q&A" icon="circle-question">
+    Answer questions about document content
+  </Card>
+  <Card title="Summarization" icon="file-lines">
+    Generate concise summaries of long documents
+  </Card>
+  <Card title="Table Extraction" icon="table">
+    Parse tables into structured formats like HTML or JSON
+  </Card>
+  <Card title="Translation" icon="language">
+    Translate documents across languages
+  </Card>
+</CardGroup>
+
+## Entity Extraction from Documents
+
+### Setup
+
+Install the required packages:
+
+```bash
+pip install google-genai pypdf pydantic
+```
+
+Initialize the client:
+
+```python
+import os
+from google import genai
+from google.genai.types import GenerateContentConfig, Part
+from pydantic import BaseModel, Field
+
+PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT")
+LOCATION = "us-central1"
+
+client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+MODEL_ID = "gemini-2.0-flash"
+```
+
+### Extract Invoice Data
+
+Define structured schemas using Pydantic:
+
+```python
+class Address(BaseModel):
+    """Geographic location details."""
+    street: str | None = Field(None, description="Street address")
+    city: str | None = Field(None, description="City name")
+    state: str | None = Field(None, description="State/province")
+    postal_code: str | None = Field(None, description="Postal code")
+    country: str | None = Field(None, description="Country name")
+
+class LineItem(BaseModel):
+    """Individual product or service entry."""
+    amount: float = Field(..., description="Total amount for line item")
+    description: str | None = Field(None, description="Product/service description")
+    quantity: int = Field(..., description="Number of units")
+    unit_price: float = Field(..., description="Price per unit")
+
+class Party(BaseModel):
+    """Entity contact and identification details."""
+    name: str = Field(..., description="Entity name")
+    email: str | None = Field(None, description="Contact email")
+    phone: str | None = Field(None, description="Contact phone")
+    tax_id: str | None = Field(None, description="Tax ID number")
+
+class Invoice(BaseModel):
+    """Complete invoice structure."""
+    invoice_id: str = Field(..., description="Unique invoice identifier")
+    invoice_date: str = Field(..., description="Invoice date (YYYY-MM-DD)")
+    supplier: Party
+    receiver: Party
+    line_items: list[LineItem]
+```
+
+### Process PDF Documents
+
+```python
+# System instruction for extraction
+extraction_instruction = """You are a document entity extraction specialist.
+Extract text values exactly as they appear in the document.
+Do not normalize entity values."""
+
+# Load PDF file
+with open("invoice.pdf", "rb") as f:
+    file_bytes = f.read()
+
+# Extract structured data
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        "The following document is an invoice.",
+        Part.from_bytes(data=file_bytes, mime_type="application/pdf"),
+    ],
+    config=GenerateContentConfig(
+        system_instruction=extraction_instruction,
+        response_schema=Invoice,
+        response_mime_type="application/json",
+    ),
+)
+
+invoice_data = response.parsed
+print(invoice_data)
+```
+
+<Note>
+You can also process documents from Cloud Storage using `Part.from_uri()` instead of loading files locally.
+</Note>
+
+## Document Classification
+
+Classify documents into predefined categories:
+
+```python
+from enum import Enum
+
+class DocumentCategory(Enum):
+    """Supported document classifications."""
+    INVOICE = "invoice"
+    W2 = "w2"
+    W9 = "w9"
+    BANK_STATEMENT = "bank_statement"
+    DRIVER_LICENSE = "driver_license"
+    PAYSTUB = "paystub"
+    PURCHASE_ORDER = "purchase_order"
+
+classification_prompt = """You are a document classification specialist.
+Identify which category this document belongs to."""
+
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        "Classify the following document.",
+        Part.from_uri(
+            file_uri="gs://cloud-samples-data/generative-ai/pdf/w9.pdf",
+            mime_type="application/pdf",
+        ),
+    ],
+    config=GenerateContentConfig(
+        system_instruction=classification_prompt,
+        response_schema=DocumentCategory,
+        response_mime_type="text/x.enum",
+    ),
+)
+
+print(f"Document type: {response.parsed}")  # Output: DocumentCategory.W9
+```
+
+## Chained Classification and Extraction
+
+Combine classification and extraction for multi-document workflows:
+
+```python
+# Map document types to extraction schemas
+schema_map = {
+    DocumentCategory.INVOICE: Invoice,
+    DocumentCategory.W2: W2Form,
+    DocumentCategory.DRIVER_LICENSE: DriversLicense,
+}
+
+document_uris = [
+    "gs://bucket/invoice.pdf",
+    "gs://bucket/w2.pdf",
+    "gs://bucket/license.pdf",
+]
+
+for uri in document_uris:
+    # Step 1: Classify
+    classification = client.models.generate_content(
+        model=MODEL_ID,
+        contents=[
+            "Classify this document.",
+            Part.from_uri(file_uri=uri, mime_type="application/pdf"),
+        ],
+        config=GenerateContentConfig(
+            system_instruction=classification_prompt,
+            response_schema=DocumentCategory,
+            response_mime_type="text/x.enum",
+        ),
+    )
+    
+    doc_type = classification.parsed
+    print(f"Document type: {doc_type}")
+    
+    # Step 2: Extract using appropriate schema
+    if doc_type in schema_map:
+        extraction_schema = schema_map[doc_type]
+        
+        extraction = client.models.generate_content(
+            model=MODEL_ID,
+            contents=[
+                f"Extract entities from this {doc_type.value} document.",
+                Part.from_uri(file_uri=uri, mime_type="application/pdf"),
+            ],
+            config=GenerateContentConfig(
+                system_instruction=extraction_instruction,
+                response_schema=extraction_schema,
+                response_mime_type="application/json",
+            ),
+        )
+        
+        print("Extracted data:")
+        print(extraction.parsed)
+```
+
+## Document Question Answering
+
+Answer questions about document content:
+
+```python
+qa_instruction = """You are a question answering specialist.
+Provide answers based only on the context provided.
+Give the answer first, followed by an explanation."""
+
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        "What is the attention mechanism?",
+        Part.from_uri(
+            file_uri="gs://cloud-samples-data/generative-ai/pdf/1706.03762v7.pdf",
+            mime_type="application/pdf",
+        ),
+    ],
+    config=GenerateContentConfig(
+        system_instruction=qa_instruction,
+    ),
+)
+
+print(response.text)
+```
+
+## Document Summarization
+
+Generate concise summaries of long documents:
+
+```python
+summarization_instruction = """You are a document summarization specialist.
+Provide a detailed summary of the content.
+If images are present, describe them.
+If tables exist, extract key data.
+Do not include numbers not mentioned in the document."""
+
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        "Summarize the following document.",
+        Part.from_uri(
+            file_uri="gs://cloud-samples-data/generative-ai/pdf/report.pdf",
+            mime_type="application/pdf",
+        ),
+    ],
+    config=GenerateContentConfig(
+        system_instruction=summarization_instruction,
+    ),
+)
+
+print(response.text)
+```
+
+## Table Extraction
+
+Parse tables into structured formats:
+
+```python
+table_prompt = "What is the HTML code of the table in this document?"
+
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        table_prompt,
+        Part.from_uri(
+            file_uri="gs://cloud-samples-data/generative-ai/pdf/salary_table.pdf",
+            mime_type="application/pdf",
+        ),
+    ],
+)
+
+html_table = response.text.removeprefix("```html").removesuffix("```")
+print(html_table)
+```
+
+## Document Translation
+
+Translate documents across languages:
+
+```python
+translation_prompt = """Translate the first paragraph into French and Spanish.
+Label each paragraph with the target language."""
+
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        translation_prompt,
+        Part.from_uri(
+            file_uri="gs://cloud-samples-data/generative-ai/pdf/document.pdf",
+            mime_type="application/pdf",
+        ),
+    ],
+)
+
+print(response.text)
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Use Clear System Instructions">
+    Define extraction rules and constraints explicitly
+  </Step>
+  <Step title="Leverage Structured Output">
+    Use Pydantic models for reliable parsing and validation
+  </Step>
+  <Step title="Process from Cloud Storage">
+    Use GCS URIs for better performance with large documents
+  </Step>
+  <Step title="Chain Operations">
+    Combine classification and extraction for complex workflows
+  </Step>
+  <Step title="Validate Extracted Data">
+    Implement validation logic for critical business fields
+  </Step>
+</Steps>
+
+## Related Resources
+
+- [Gemini Multimodal Capabilities](/features/multimodal)
+- [Structured Output Guide](/features/structured-output)
+- [Document AI Integration](/integrations/document-ai)
+
+<Note>
+For production document processing at scale, consider combining Gemini with [Document AI](https://cloud.google.com/document-ai) for specialized parsers.
+</Note>

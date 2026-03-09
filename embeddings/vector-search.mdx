@@ -1,0 +1,507 @@
+---
+title: "Vector Search"
+description: "Deploy and query scalable vector indexes with Vertex AI Vector Search for blazing-fast similarity search"
+---
+
+## Overview
+
+Vertex AI Vector Search (formerly Matching Engine) is a fully managed service that enables fast and scalable similarity search across millions or billions of embeddings. Built on Google's ScaNN (Scalable Nearest Neighbors) algorithm, it powers search and recommendation features in Google products like YouTube and Google Play.
+
+<Note>
+Vector Search can find nearest neighbors in milliseconds, even with billions of vectors, thanks to the ScaNN algorithm's advanced quantization techniques.
+</Note>
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Blazing Fast" icon="bolt">
+    Millisecond-level queries across billions of vectors using ScaNN algorithm
+  </Card>
+  
+  <Card title="Fully Managed" icon="gears">
+    No infrastructure management required - Google handles scaling and operations
+  </Card>
+  
+  <Card title="Autoscaling" icon="arrows-maximize">
+    Automatically resize nodes based on workload demands
+  </Card>
+  
+  <Card title="Real-time Updates" icon="clock">
+    Stream updates to add or remove vectors without reindexing
+  </Card>
+</CardGroup>
+
+## Getting Started
+
+### Installation
+
+```bash
+pip install --upgrade google-cloud-aiplatform
+```
+
+### Enable APIs
+
+```bash
+gcloud services enable compute.googleapis.com \
+    aiplatform.googleapis.com \
+    --project YOUR_PROJECT_ID
+```
+
+### Setup
+
+```python
+from google.cloud import aiplatform
+from datetime import datetime
+
+# Configuration
+PROJECT_ID = "your-project-id"
+LOCATION = "us-central1"
+UID = datetime.now().strftime("%m%d%H%M")
+
+# Initialize
+aiplatform.init(project=PROJECT_ID, location=LOCATION)
+```
+
+## Create an Index
+
+<Steps>
+  <Step title="Prepare Embeddings">
+    Create a JSONL file with your embeddings:
+    
+    ```json
+    {"id": "1", "embedding": [0.1, 0.2, ..., 0.768]}
+    {"id": "2", "embedding": [0.3, 0.4, ..., 0.512]}
+    ```
+  </Step>
+  
+  <Step title="Upload to Cloud Storage">
+    ```bash
+    gsutil mb -l us-central1 gs://your-bucket-name
+    gsutil cp embeddings.json gs://your-bucket-name/
+    ```
+  </Step>
+  
+  <Step title="Create the Index">
+    ```python
+    my_index = aiplatform.MatchingEngineIndex.create_tree_ah_index(
+        display_name=f"my-index-{UID}",
+        contents_delta_uri="gs://your-bucket-name/",
+        dimensions=768,
+        approximate_neighbors_count=10,
+        distance_measure_type="DOT_PRODUCT_DISTANCE"
+    )
+    ```
+  </Step>
+</Steps>
+
+### Index Parameters
+
+<Tabs>
+  <Tab title="Basic">
+    ```python
+    my_index = aiplatform.MatchingEngineIndex.create_tree_ah_index(
+        display_name="product-search-index",
+        contents_delta_uri="gs://my-bucket/embeddings/",
+        dimensions=768,
+        approximate_neighbors_count=10,
+        distance_measure_type="DOT_PRODUCT_DISTANCE"
+    )
+    ```
+  </Tab>
+  
+  <Tab title="With Stream Updates">
+    ```python
+    my_index = aiplatform.MatchingEngineIndex.create_tree_ah_index(
+        display_name="real-time-index",
+        dimensions=768,
+        approximate_neighbors_count=10,
+        index_update_method="STREAM_UPDATE",  # Enable real-time updates
+        distance_measure_type="DOT_PRODUCT_DISTANCE"
+    )
+    ```
+  </Tab>
+  
+  <Tab title="Advanced">
+    ```python
+    my_index = aiplatform.MatchingEngineIndex.create_tree_ah_index(
+        display_name="advanced-index",
+        contents_delta_uri="gs://my-bucket/embeddings/",
+        dimensions=768,
+        approximate_neighbors_count=150,
+        distance_measure_type="DOT_PRODUCT_DISTANCE",
+        leaf_node_embedding_count=500,
+        leaf_nodes_to_search_percent=7,
+        index_update_method="BATCH_UPDATE"
+    )
+    ```
+  </Tab>
+</Tabs>
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|  
+| `dimensions` | Size of each embedding vector | Required |
+| `approximate_neighbors_count` | Number of neighbors to return | 10 |
+| `distance_measure_type` | Distance metric (`DOT_PRODUCT_DISTANCE`, `COSINE_DISTANCE`, `SQUARED_L2_DISTANCE`) | `DOT_PRODUCT_DISTANCE` |
+| `index_update_method` | `BATCH_UPDATE` or `STREAM_UPDATE` | `BATCH_UPDATE` |
+
+## Deploy an Index Endpoint
+
+To query your index, deploy it to an endpoint:
+
+```python
+# Create endpoint
+my_endpoint = aiplatform.MatchingEngineIndexEndpoint.create(
+    display_name=f"my-endpoint-{UID}",
+    public_endpoint_enabled=True  # Enable public access
+)
+
+# Deploy index to endpoint (takes ~30 minutes first time)
+DEPLOYED_INDEX_ID = f"deployed_index_{UID}"
+my_endpoint.deploy_index(
+    index=my_index,
+    deployed_index_id=DEPLOYED_INDEX_ID,
+    min_replica_count=1,
+    max_replica_count=2
+)
+```
+
+<Note>
+The first deployment to a new endpoint takes about 30 minutes to provision infrastructure. Subsequent deployments are much faster.
+</Note>
+
+## Query the Index
+
+### Basic Query
+
+```python
+from google import genai
+import numpy as np
+
+# Generate query embedding
+client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+query_text = "How to reset my password?"
+
+query_embedding = client.models.embed_content(
+    model="text-embedding-005",
+    contents=[query_text]
+).embeddings[0].values
+
+# Search
+response = my_endpoint.find_neighbors(
+    deployed_index_id=DEPLOYED_INDEX_ID,
+    queries=[query_embedding],
+    num_neighbors=10
+)
+
+# Process results
+for idx, neighbor in enumerate(response[0]):
+    print(f"Rank {idx + 1}:")
+    print(f"  ID: {neighbor.id}")
+    print(f"  Distance: {neighbor.distance}")
+```
+
+### Batch Queries
+
+```python
+# Multiple queries at once
+queries = [
+    "How to reset password?",
+    "Where is my order?",
+    "How to cancel subscription?"
+]
+
+# Generate embeddings
+query_embeddings = [
+    client.models.embed_content(
+        model="text-embedding-005",
+        contents=[q]
+    ).embeddings[0].values
+    for q in queries
+]
+
+# Batch search
+responses = my_endpoint.find_neighbors(
+    deployed_index_id=DEPLOYED_INDEX_ID,
+    queries=query_embeddings,
+    num_neighbors=5
+)
+
+# Process each query's results
+for query_idx, query_response in enumerate(responses):
+    print(f"\nResults for: {queries[query_idx]}")
+    for neighbor in query_response:
+        print(f"  - {neighbor.id} (distance: {neighbor.distance:.4f})")
+```
+
+### With Filtering
+
+```python
+from google.cloud.aiplatform.matching_engine.matching_engine_index_endpoint import (
+    Namespace,
+    NumericNamespace
+)
+
+# Filter by namespace
+response = my_endpoint.find_neighbors(
+    deployed_index_id=DEPLOYED_INDEX_ID,
+    queries=[query_embedding],
+    num_neighbors=10,
+    filter=[
+        Namespace(name="category", allow_tokens=["electronics", "computers"]),
+        NumericNamespace(
+            name="price",
+            value_int=100,
+            op=NumericNamespace.Operator.LESS
+        )
+    ]
+)
+```
+
+## Update Index
+
+### Stream Updates (Real-time)
+
+<Note>
+Stream updates are only available for indexes created with `index_update_method="STREAM_UPDATE"`.
+</Note>
+
+```python
+from google.cloud.aiplatform.matching_engine.matching_engine_index_endpoint import (
+    IndexDatapoint
+)
+
+# Add new embeddings
+new_datapoints = [
+    IndexDatapoint(
+        datapoint_id="new_1",
+        feature_vector=[0.1, 0.2, ...],  # 768 dimensions
+    ),
+    IndexDatapoint(
+        datapoint_id="new_2",
+        feature_vector=[0.3, 0.4, ...],
+    )
+]
+
+my_endpoint.upsert_datapoints(
+    deployed_index_id=DEPLOYED_INDEX_ID,
+    datapoints=new_datapoints
+)
+
+# Remove embeddings
+my_endpoint.remove_datapoints(
+    deployed_index_id=DEPLOYED_INDEX_ID,
+    datapoint_ids=["old_1", "old_2"]
+)
+```
+
+### Batch Updates
+
+```python
+# Upload new embeddings file
+! gsutil cp updated_embeddings.json gs://your-bucket/
+
+# Update index
+my_index = my_index.update_embeddings(
+    contents_delta_uri="gs://your-bucket/updated_embeddings.json"
+)
+```
+
+## Index Types
+
+<Tabs>
+  <Tab title="Tree-AH (Recommended)">
+    **Best for:** Most use cases
+    
+    - Balanced speed and accuracy
+    - Supports filtering
+    - Lower memory footprint
+    
+    ```python
+    index = aiplatform.MatchingEngineIndex.create_tree_ah_index(
+        display_name="tree-ah-index",
+        contents_delta_uri="gs://bucket/embeddings/",
+        dimensions=768
+    )
+    ```
+  </Tab>
+  
+  <Tab title="Brute Force">
+    **Best for:** Small datasets (less than 10k vectors) requiring 100% accuracy
+    
+    - Exact nearest neighbor search
+    - No approximation
+    - Slower for large datasets
+    
+    ```python
+    index = aiplatform.MatchingEngineIndex.create_brute_force_index(
+        display_name="brute-force-index",
+        contents_delta_uri="gs://bucket/embeddings/",
+        dimensions=768
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## Autoscaling
+
+Configure automatic scaling based on demand:
+
+```python
+my_endpoint.deploy_index(
+    index=my_index,
+    deployed_index_id=DEPLOYED_INDEX_ID,
+    min_replica_count=1,
+    max_replica_count=10,
+    enable_access_logging=True,
+    automatic_resources=aiplatform.AutomaticResources(
+        min_replica_count=1,
+        max_replica_count=10
+    )
+)
+```
+
+## Monitoring
+
+### Check Index Status
+
+```python
+# Get index information
+print(f"Index name: {my_index.display_name}")
+print(f"Index state: {my_index.index_stats}")
+print(f"Deployed: {my_index.deployed_indexes}")
+```
+
+### Query Metrics
+
+```python
+# Enable access logging
+my_endpoint.deploy_index(
+    index=my_index,
+    deployed_index_id=DEPLOYED_INDEX_ID,
+    enable_access_logging=True
+)
+
+# View metrics in Cloud Console:
+# https://console.cloud.google.com/vertex-ai/matching-engine/index-endpoints
+```
+
+## Complete Example
+
+Here's a full end-to-end example:
+
+<CodeGroup>
+```python Setup & Create Index
+from google.cloud import aiplatform
+from google import genai
+from datetime import datetime
+import numpy as np
+
+# Initialize
+PROJECT_ID = "your-project-id"
+LOCATION = "us-central1"
+UID = datetime.now().strftime("%m%d%H%M")
+
+aiplatform.init(project=PROJECT_ID, location=LOCATION)
+client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+
+# Create index
+index = aiplatform.MatchingEngineIndex.create_tree_ah_index(
+    display_name=f"docs-index-{UID}",
+    contents_delta_uri="gs://your-bucket/embeddings/",
+    dimensions=768,
+    approximate_neighbors_count=10,
+    distance_measure_type="DOT_PRODUCT_DISTANCE"
+)
+
+print(f"Index created: {index.resource_name}")
+```
+
+```python Deploy Endpoint
+# Create endpoint
+endpoint = aiplatform.MatchingEngineIndexEndpoint.create(
+    display_name=f"docs-endpoint-{UID}",
+    public_endpoint_enabled=True
+)
+
+# Deploy index
+DEPLOYED_INDEX_ID = f"deployed_{UID}"
+endpoint.deploy_index(
+    index=index,
+    deployed_index_id=DEPLOYED_INDEX_ID,
+    min_replica_count=1,
+    max_replica_count=2
+)
+
+print(f"Endpoint deployed: {endpoint.resource_name}")
+```
+
+```python Query
+# Generate query embedding
+query = "How to authenticate with API?"
+query_emb = client.models.embed_content(
+    model="text-embedding-005",
+    contents=[query]
+).embeddings[0].values
+
+# Search
+response = endpoint.find_neighbors(
+    deployed_index_id=DEPLOYED_INDEX_ID,
+    queries=[query_emb],
+    num_neighbors=5
+)
+
+# Display results
+for i, neighbor in enumerate(response[0]):
+    print(f"{i+1}. Document {neighbor.id} (score: {neighbor.distance:.4f})")
+```
+</CodeGroup>
+
+## Cleanup
+
+<Warning>
+Remember to delete resources to avoid ongoing charges:
+</Warning>
+
+```python
+# Undeploy index
+endpoint.undeploy_all()
+
+# Delete endpoint
+endpoint.delete(force=True)
+
+# Delete index
+index.delete()
+
+# Delete Cloud Storage bucket
+! gsutil rm -r gs://your-bucket-name
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Choose the Right Index Type">
+    Use Tree-AH for most cases, brute force only for small datasets requiring exact matches
+  </Step>
+  
+  <Step title="Tune Parameters">
+    Adjust `approximate_neighbors_count` based on your recall requirements (higher = better recall, slower queries)
+  </Step>
+  
+  <Step title="Use Stream Updates">
+    Enable stream updates for real-time applications that need to add/remove vectors frequently
+  </Step>
+  
+  <Step title="Monitor Performance">
+    Enable access logging and monitor query latency in Cloud Console
+  </Step>
+  
+  <Step title="Optimize Costs">
+    Use autoscaling to match capacity with demand and minimize idle resources
+  </Step>
+</Steps>
+
+## Next Steps
+
+- [Implement hybrid search](/embeddings/hybrid-search) combining vector and keyword search
+- [Build a RAG application](https://cloud.google.com/use-cases/retrieval-augmented-generation)
+- [Tune embedding models](/embeddings/text-embeddings#tuning-text-embeddings) for better domain-specific performance

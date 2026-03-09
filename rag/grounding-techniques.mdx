@@ -1,0 +1,577 @@
+---
+title: Grounding Techniques
+description: Learn advanced techniques for grounding LLM responses including chunking strategies, data sources, and retrieval methods
+---
+
+## Overview
+
+[Grounding in Vertex AI](https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/ground-gemini) lets you use generative models to generate content grounded in your own documents and data. This capability ensures that model responses are anchored in specific information and reduces hallucinations.
+
+<CardGroup cols={2}>
+  <Card title="Reduces Hallucinations" icon="shield-check">
+    Prevents models from generating false information by anchoring in verified data
+  </Card>
+  
+  <Card title="Increases Trust" icon="handshake">
+    Provides citations and sources for generated content
+  </Card>
+  
+  <Card title="Current Information" icon="clock">
+    Access real-time data beyond the model's training cutoff
+  </Card>
+  
+  <Card title="Private Data" icon="lock">
+    Ground responses in your organization's proprietary information
+  </Card>
+</CardGroup>
+
+## Grounding Sources
+
+Vertex AI supports multiple grounding sources:
+
+### Google Search
+
+Ground responses in publicly available web content indexed by Google:
+
+```python
+from google import genai
+from google.genai.types import Tool, GoogleSearch, GenerateContentConfig
+
+client = genai.Client(vertexai=True, project=PROJECT_ID, location="global")
+
+# Use Google Search for grounding
+search_tool = Tool(google_search=GoogleSearch())
+
+response = client.models.generate_content(
+    model="gemini-2.0-flash-001",
+    contents="What are the latest developments in quantum computing?",
+    config=GenerateContentConfig(
+        tools=[search_tool],
+        temperature=0.2,
+    ),
+)
+
+print(response.text)
+```
+
+<Warning>
+If you use Google Search grounding in production, you must also implement a [Google Search entry point](https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/grounding-search-entry-points) to comply with usage requirements.
+</Warning>
+
+### Vertex AI Search Datastores
+
+Ground in your own enterprise data using Vertex AI Search:
+
+```python
+from google.genai.types import Tool, Retrieval, VertexAISearch
+
+# Use Vertex AI Search datastore
+search_tool = Tool(
+    retrieval=Retrieval(
+        vertex_ai_search=VertexAISearch(
+            datastore=f"projects/{PROJECT_ID}/locations/global/collections/default_collection/dataStores/{DATASTORE_ID}"
+        )
+    )
+)
+
+response = client.models.generate_content(
+    model="gemini-2.0-flash-001",
+    contents="What is our company's return policy?",
+    config=GenerateContentConfig(tools=[search_tool]),
+)
+```
+
+### RAG Engine Corpora
+
+Ground using RAG Engine with flexible vector database backends:
+
+```python
+from google.genai.types import Tool, Retrieval, VertexRagStore
+
+# Use RAG Engine corpus
+rag_tool = Tool(
+    retrieval=Retrieval(
+        vertex_rag_store=VertexRagStore(
+            rag_resources=[f"projects/{PROJECT_ID}/locations/us-east1/ragCorpora/{CORPUS_NAME}"],
+            similarity_top_k=5,
+        )
+    )
+)
+
+response = client.models.generate_content(
+    model="gemini-2.0-flash-001",
+    contents="Explain our security architecture",
+    config=GenerateContentConfig(tools=[rag_tool]),
+)
+```
+
+## Chunking Strategies
+
+Effective chunking is critical for retrieval quality. The goal is to create chunks that are:
+- Self-contained and semantically meaningful
+- Appropriately sized for the embedding model
+- Balanced between context and precision
+
+### Fixed-Size Chunking
+
+Split documents into fixed-size chunks with overlap:
+
+```python
+from vertexai import rag
+
+# Upload with fixed-size chunks
+rag_file = rag.upload_file(
+    corpus_name=corpus_name,
+    path="document.pdf",
+    chunk_size=512,  # Characters per chunk
+    chunk_overlap=100,  # Overlap between chunks
+)
+```
+
+**Pros:**
+- Simple and predictable
+- Works well for uniform content
+
+**Cons:**
+- May split semantic units awkwardly
+- Doesn't account for document structure
+
+### Semantic Chunking
+
+Split based on semantic boundaries (paragraphs, sections):
+
+```python
+import re
+from typing import List
+
+def semantic_chunk(text: str, max_chunk_size: int = 1000) -> List[str]:
+    """Split text on paragraph boundaries while respecting max size."""
+    # Split on double newlines (paragraphs)
+    paragraphs = re.split(r'\n\n+', text)
+    
+    chunks = []
+    current_chunk = ""
+    
+    for para in paragraphs:
+        # If adding paragraph exceeds max size, start new chunk
+        if len(current_chunk) + len(para) > max_chunk_size:
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+            current_chunk = para
+        else:
+            current_chunk += "\n\n" + para if current_chunk else para
+    
+    if current_chunk:
+        chunks.append(current_chunk.strip())
+    
+    return chunks
+
+# Example usage
+text = open("document.txt").read()
+chunks = semantic_chunk(text, max_chunk_size=800)
+```
+
+**Pros:**
+- Respects semantic boundaries
+- More coherent chunks
+
+**Cons:**
+- Variable chunk sizes
+- Requires understanding of document structure
+
+### Hierarchical Chunking (Parent-Child)
+
+Create small chunks for retrieval but provide larger context for generation:
+
+```python
+def hierarchical_chunk(
+    text: str,
+    child_size: int = 256,
+    parent_size: int = 1024
+) -> List[dict]:
+    """Create parent-child chunk hierarchy."""
+    # Split into parent chunks
+    parents = [text[i:i+parent_size] for i in range(0, len(text), parent_size)]
+    
+    chunks = []
+    for parent_idx, parent in enumerate(parents):
+        # Split each parent into children
+        children = [
+            parent[i:i+child_size] 
+            for i in range(0, len(parent), child_size)
+        ]
+        
+        for child_idx, child in enumerate(children):
+            chunks.append({
+                "child_text": child,
+                "parent_text": parent,
+                "parent_id": parent_idx,
+                "child_id": child_idx,
+            })
+    
+    return chunks
+
+# Retrieve with child, generate with parent
+chunks = hierarchical_chunk(text)
+# Store child embeddings, but return parent text during retrieval
+```
+
+**Pros:**
+- Precise retrieval with small chunks
+- Rich context for generation with parent
+
+**Cons:**
+- More complex to implement
+- Higher storage requirements
+
+### Document Structure-Aware Chunking
+
+Split based on document structure (headings, sections):
+
+```python
+from langchain.text_splitter import MarkdownHeaderTextSplitter
+
+# For Markdown documents
+headers_to_split_on = [
+    ("#", "Header 1"),
+    ("##", "Header 2"),
+    ("###", "Header 3"),
+]
+
+markdown_splitter = MarkdownHeaderTextSplitter(
+    headers_to_split_on=headers_to_split_on
+)
+
+md_header_splits = markdown_splitter.split_text(markdown_document)
+
+# Each chunk preserves header context
+for chunk in md_header_splits:
+    print(f"Metadata: {chunk.metadata}")
+    print(f"Content: {chunk.page_content}")
+```
+
+## Retrieval Methods
+
+### Semantic Search (Dense Retrieval)
+
+Use embedding similarity for semantic understanding:
+
+```python
+from vertexai.language_models import TextEmbeddingModel
+
+model = TextEmbeddingModel.from_pretrained("text-embedding-005")
+
+# Embed query
+query = "authentication methods"
+query_embedding = model.get_embeddings([query])[0].values
+
+# Find similar documents using vector search
+# (Implementation depends on vector database)
+```
+
+**Best for:**
+- Conceptual queries
+- Synonyms and paraphrasing
+- Multilingual search
+
+### Keyword Search (Sparse Retrieval)
+
+Use traditional keyword matching:
+
+```python
+# Vertex AI Search supports keyword search natively
+response = client.search(
+    request=discoveryengine.SearchRequest(
+        serving_config=serving_config,
+        query="API authentication OAuth2",  # Keyword query
+        query_expansion_spec=discoveryengine.SearchRequest.QueryExpansionSpec(
+            condition=discoveryengine.SearchRequest.QueryExpansionSpec.Condition.DISABLED
+        ),
+    )
+)
+```
+
+**Best for:**
+- Exact term matches
+- Technical terms and IDs
+- Names and specific entities
+
+### Hybrid Search
+
+Combine semantic and keyword search for best results:
+
+```python
+# Vertex AI Search hybrid search
+from google.genai.types import Tool, Retrieval, VertexAISearch
+
+search_tool = Tool(
+    retrieval=Retrieval(
+        vertex_ai_search=VertexAISearch(
+            datastore=f"projects/{PROJECT_ID}/locations/global/collections/default_collection/dataStores/{DATASTORE_ID}"
+        )
+    )
+)
+
+# Vertex AI Search automatically uses hybrid retrieval
+response = client.models.generate_content(
+    model="gemini-2.0-flash-001",
+    contents="OAuth2 authentication flow",
+    config=GenerateContentConfig(tools=[search_tool]),
+)
+```
+
+**Best for:**
+- Most production use cases
+- Balancing precision and recall
+- Diverse query types
+
+## Advanced Grounding Patterns
+
+### Multi-Turn Grounding
+
+Maintain grounding context across conversation turns:
+
+```python
+from google.genai.types import Content, Part
+
+# Initialize conversation history
+history = []
+
+# First turn with grounding
+response1 = client.models.generate_content(
+    model="gemini-2.0-flash-001",
+    contents="What are our pricing tiers?",
+    config=GenerateContentConfig(tools=[search_tool]),
+)
+
+history.extend([
+    Content(role="user", parts=[Part(text="What are our pricing tiers?")]),
+    Content(role="model", parts=[Part(text=response1.text)]),
+])
+
+# Follow-up question with context
+response2 = client.models.generate_content(
+    model="gemini-2.0-flash-001",
+    contents=history + [Content(role="user", parts=[Part(text="What's included in the enterprise tier?")])],
+    config=GenerateContentConfig(tools=[search_tool]),
+)
+```
+
+### Dynamic Retrieval with Threshold
+
+Only retrieve when confidence is low:
+
+```python
+from google.genai.types import Tool, Retrieval, VertexAISearch, ToolConfig, FunctionCallingConfig
+
+# Configure dynamic retrieval
+tool_config = ToolConfig(
+    function_calling_config=FunctionCallingConfig(
+        mode=FunctionCallingConfig.Mode.AUTO,  # Let model decide when to retrieve
+    )
+)
+
+response = client.models.generate_content(
+    model="gemini-2.0-flash-001",
+    contents="What is 2+2?",  # Simple query, may not trigger retrieval
+    config=GenerateContentConfig(
+        tools=[search_tool],
+        tool_config=tool_config,
+    ),
+)
+```
+
+### Retrieval with Reranking
+
+Rerank retrieved results before generation:
+
+```python
+# Retrieve more candidates
+rag_tool = Tool(
+    retrieval=Retrieval(
+        vertex_rag_store=VertexRagStore(
+            rag_resources=[corpus_name],
+            similarity_top_k=10,  # Retrieve 10 candidates
+        )
+    )
+)
+
+# Use model to rerank and select top 3 for generation
+response = client.models.generate_content(
+    model="gemini-2.0-flash-001",
+    contents="query",
+    config=GenerateContentConfig(tools=[rag_tool]),
+)
+```
+
+## Grounding Metadata and Citations
+
+### Accessing Grounding Data
+
+```python
+from google.genai.types import GenerateContentResponse
+from IPython.display import Markdown, display
+
+def print_grounding_data(response: GenerateContentResponse) -> None:
+    """Print Gemini response with grounding citations."""
+    candidate = response.candidates[0] if response.candidates else None
+    metadata = getattr(candidate, "grounding_metadata", None)
+
+    if not metadata:
+        print("Response does not contain grounding metadata.")
+        return
+
+    # Insert citation markers
+    ENCODING = "utf-8"
+    text_bytes = response.text.encode(ENCODING)
+    parts = []
+    last = 0
+
+    for support in metadata.grounding_supports or []:
+        end = support.segment.end_index
+        parts.append(text_bytes[last:end].decode(ENCODING))
+        parts.append(
+            " " + "".join(f"[{i + 1}]" for i in support.grounding_chunk_indices)
+        )
+        last = end
+
+    parts.append(text_bytes[last:].decode(ENCODING))
+    parts.append("\n\n---\n## Grounding Sources\n")
+
+    # List grounding chunks
+    if chunks := metadata.grounding_chunks:
+        parts.append("### Sources\n")
+        for i, chunk in enumerate(chunks, 1):
+            if ctx := chunk.web or chunk.retrieved_context:
+                if chunk.web:
+                    uri = chunk.web.uri
+                    title = chunk.web.title
+                elif chunk.retrieved_context:
+                    uri = chunk.retrieved_context.uri
+                    title = chunk.retrieved_context.title
+                
+                parts.append(f"[{i}] [{title}]({uri})\n")
+
+    display(Markdown("".join(parts)))
+
+# Use the function
+response = client.models.generate_content(
+    model="gemini-2.0-flash-001",
+    contents="What is our refund policy?",
+    config=GenerateContentConfig(tools=[search_tool]),
+)
+
+print_grounding_data(response)
+```
+
+### Grounding Confidence
+
+```python
+# Check grounding confidence
+for candidate in response.candidates:
+    if hasattr(candidate, "grounding_metadata"):
+        metadata = candidate.grounding_metadata
+        
+        # Check if response is well-grounded
+        if metadata.retrieval_metadata:
+            print(f"Grounding score: {metadata.retrieval_metadata.grounding_score}")
+        
+        # Count grounding supports
+        support_count = len(metadata.grounding_supports or [])
+        print(f"Number of grounding supports: {support_count}")
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Choose Appropriate Chunk Size">
+    Use 256-512 tokens for precise retrieval, 512-1024 for more context. Experiment with your specific use case.
+  </Step>
+  
+  <Step title="Add Overlap">
+    Include 10-20% overlap between chunks to avoid losing context at boundaries.
+  </Step>
+  
+  <Step title="Include Metadata">
+    Enrich chunks with metadata (title, section, date) for better filtering and context.
+  </Step>
+  
+  <Step title="Use Hybrid Search">
+    Combine semantic and keyword search for best results across diverse queries.
+  </Step>
+  
+  <Step title="Monitor Retrieved Context">
+    Regularly review which chunks are being retrieved to identify gaps or issues.
+  </Step>
+  
+  <Step title="Optimize Retrieval Count">
+    Start with 3-5 retrieved chunks and adjust based on response quality and cost.
+  </Step>
+</Steps>
+
+## Common Pitfalls
+
+<Warning>
+**Chunks Too Large**: Large chunks dilute relevant information with noise, reducing retrieval precision.
+</Warning>
+
+<Warning>
+**Chunks Too Small**: Small chunks lack sufficient context, leading to incomplete or misleading responses.
+</Warning>
+
+<Warning>
+**No Overlap**: Without overlap, important information at chunk boundaries may be lost.
+</Warning>
+
+<Warning>
+**Ignoring Document Structure**: Splitting across headings or sections can break semantic coherence.
+</Warning>
+
+## Evaluation
+
+Measure grounding effectiveness:
+
+```python
+from vertexai.evaluation import EvalTask
+
+# Define evaluation metrics
+eval_task = EvalTask(
+    dataset=eval_dataset,
+    metrics=[
+        "groundedness",  # How well grounded is the response
+        "citation_recall",  # Are relevant sources cited
+        "citation_precision",  # Are citations accurate
+    ],
+)
+
+eval_result = eval_task.evaluate(
+    model=model,
+    prompt_template=prompt_template,
+)
+
+print(eval_result.summary_metrics)
+```
+
+<Note>
+See the [Evaluation documentation](../evaluation/overview) for comprehensive guidance on measuring RAG performance.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="RAG Engine" icon="gear" href="./rag-engine">
+    Implement RAG with managed orchestration
+  </Card>
+  
+  <Card title="Vertex AI Search" icon="magnifying-glass" href="./vertex-ai-search">
+    Build enterprise search applications
+  </Card>
+  
+  <Card title="Evaluation" icon="chart-bar" href="../evaluation/overview">
+    Measure and improve RAG quality
+  </Card>
+  
+  <Card title="Multimodal RAG" icon="images" href="../vision/multimodal-rag">
+    Extend RAG to images and videos
+  </Card>
+</CardGroup>

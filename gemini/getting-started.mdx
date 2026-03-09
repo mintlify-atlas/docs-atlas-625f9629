@@ -1,0 +1,426 @@
+---
+title: Getting Started with Gemini
+description: Learn the basics of text generation and model configuration with Gemini
+---
+
+# Getting Started with Gemini
+
+This guide walks you through the fundamentals of using Gemini models for text generation on Google Cloud.
+
+## Prerequisites
+
+<Steps>
+  <Step title="Google Cloud Project">
+    You need an active Google Cloud project with billing enabled. [Create a project](https://console.cloud.google.com/cloud-resource-manager) if you don't have one.
+  </Step>
+  
+  <Step title="Enable APIs">
+    Enable the Vertex AI API in your project:
+    
+    [Enable Vertex AI API](https://console.cloud.google.com/flows/enableapi?apiid=aiplatform.googleapis.com)
+  </Step>
+  
+  <Step title="Authentication">
+    Set up authentication for your environment using Application Default Credentials or a service account.
+  </Step>
+</Steps>
+
+## Installation
+
+Install the Google Gen AI SDK for Python:
+
+```bash
+pip install --upgrade google-genai
+```
+
+## Basic Setup
+
+### Import Libraries
+
+```python
+import os
+from google import genai
+from google.genai.types import GenerateContentConfig
+from IPython.display import Markdown, display
+```
+
+### Authenticate (Colab Only)
+
+If you're using Google Colab, authenticate your session:
+
+```python
+import sys
+
+if "google.colab" in sys.modules:
+    from google.colab import auth
+    auth.authenticate_user()
+```
+
+### Initialize the Client
+
+```python
+PROJECT_ID = "your-project-id"
+LOCATION = "global"  # or "us-central1", "europe-west1", etc.
+
+client = genai.Client(
+    vertexai=True,
+    project=PROJECT_ID,
+    location=LOCATION
+)
+```
+
+## Your First Request
+
+Send a simple text generation request:
+
+```python
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents="Explain quantum computing in simple terms."
+)
+
+print(response.text)
+```
+
+<Note>
+The `response.text` property returns the generated text. For more details about the response structure, access `response.candidates[0]`.
+</Note>
+
+## Choosing a Model
+
+Select the appropriate model for your use case:
+
+<Tabs>
+  <Tab title="Gemini 3.1 Pro">
+    ```python
+    MODEL_ID = "gemini-3.1-pro-preview"
+    ```
+    
+    **Best for:**
+    - Complex reasoning tasks
+    - Advanced code generation
+    - Agentic workflows
+    - Maximum quality
+  </Tab>
+  
+  <Tab title="Gemini 3 Flash">
+    ```python
+    MODEL_ID = "gemini-3-flash-preview"
+    ```
+    
+    **Best for:**
+    - Fast responses
+    - High-volume applications
+    - Real-time interactions
+    - Cost optimization
+  </Tab>
+  
+  <Tab title="Gemini 2.5 Pro">
+    ```python
+    MODEL_ID = "gemini-2.5-pro"
+    ```
+    
+    **Best for:**
+    - Production workloads
+    - Balanced performance
+    - General-purpose tasks
+  </Tab>
+</Tabs>
+
+## Configuration Parameters
+
+### Temperature
+
+Controls randomness in the output (0.0 to 2.0):
+
+```python
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents="Write a creative story about a robot.",
+    config=GenerateContentConfig(
+        temperature=1.5  # Higher = more creative
+    )
+)
+```
+
+<Warning>
+For Gemini 3 models, we strongly recommend keeping `temperature=1.0` as the reasoning capabilities are optimized for this default value.
+</Warning>
+
+### Top-P (Nucleus Sampling)
+
+Controls diversity by considering only the top probability mass:
+
+```python
+config = GenerateContentConfig(
+    temperature=1.0,
+    top_p=0.95  # Consider top 95% probability tokens
+)
+```
+
+### Max Output Tokens
+
+Limit the length of generated responses:
+
+```python
+config = GenerateContentConfig(
+    max_output_tokens=2048  # Maximum tokens in response
+)
+```
+
+### Complete Example
+
+```python
+from google.genai.types import GenerateContentConfig, ThinkingConfig, ThinkingLevel
+
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents="Explain the theory of relativity.",
+    config=GenerateContentConfig(
+        temperature=1.0,
+        top_p=0.95,
+        max_output_tokens=8000,
+        thinking_config=ThinkingConfig(
+            thinking_level=ThinkingLevel.MEDIUM
+        )
+    )
+)
+
+print(response.text)
+```
+
+## Thinking Levels
+
+Gemini 3.1 Pro supports configurable reasoning depth:
+
+<Tabs>
+  <Tab title="Low">
+    ```python
+    from google.genai.types import ThinkingConfig, ThinkingLevel
+    
+    config = GenerateContentConfig(
+        thinking_config=ThinkingConfig(
+            thinking_level=ThinkingLevel.LOW
+        )
+    )
+    ```
+    
+    - Token budget: 1-1,000 tokens
+    - Best for: Simple queries, chat, fast responses
+    - Latency: Minimal
+  </Tab>
+  
+  <Tab title="Medium">
+    ```python
+    config = GenerateContentConfig(
+        thinking_config=ThinkingConfig(
+            thinking_level=ThinkingLevel.MEDIUM
+        )
+    )
+    ```
+    
+    - Token budget: 1,001-16,384 tokens
+    - Best for: Moderate complexity, balanced performance
+    - Latency: Medium
+  </Tab>
+  
+  <Tab title="High">
+    ```python
+    config = GenerateContentConfig(
+        thinking_config=ThinkingConfig(
+            thinking_level=ThinkingLevel.HIGH
+        )
+    )
+    ```
+    
+    - Token budget: 16,384-32,768 tokens (default)
+    - Best for: Complex reasoning, coding challenges
+    - Latency: Higher, but more thorough
+  </Tab>
+</Tabs>
+
+## Streaming Responses
+
+Stream responses token-by-token for better user experience:
+
+```python
+for chunk in client.models.generate_content_stream(
+    model="gemini-3.1-pro-preview",
+    contents="Write a short story about space exploration.",
+    config=GenerateContentConfig(
+        thinking_config=ThinkingConfig(
+            thinking_level=ThinkingLevel.LOW
+        )
+    )
+):
+    print(chunk.text, end="")
+```
+
+## System Instructions
+
+Provide persistent instructions that apply to all requests:
+
+```python
+system_instruction = """
+You are a helpful AI assistant specializing in Python programming.
+Always provide code examples with comments.
+Explain complex concepts in simple terms.
+"""
+
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents="How do I read a CSV file?",
+    config=GenerateContentConfig(
+        system_instruction=system_instruction
+    )
+)
+```
+
+## Multi-Turn Conversations
+
+Create chat sessions to maintain conversation context:
+
+```python
+chat = client.chats.create(
+    model="gemini-3.1-pro-preview",
+    config=GenerateContentConfig(
+        temperature=1.0
+    )
+)
+
+# First message
+response = chat.send_message("What is a binary search tree?")
+print("Assistant:", response.text)
+
+# Follow-up message (maintains context)
+response = chat.send_message("Can you show me an implementation?")
+print("Assistant:", response.text)
+
+# View conversation history
+for message in chat.history:
+    print(f"{message.role}: {message.parts[0].text[:100]}...")
+```
+
+## Error Handling
+
+Handle common errors gracefully:
+
+```python
+from google.api_core import exceptions
+
+try:
+    response = client.models.generate_content(
+        model="gemini-3.1-pro-preview",
+        contents="Your prompt here"
+    )
+    print(response.text)
+    
+except exceptions.InvalidArgument as e:
+    print(f"Invalid request: {e}")
+    
+except exceptions.ResourceExhausted as e:
+    print(f"Quota exceeded: {e}")
+    
+except exceptions.DeadlineExceeded as e:
+    print(f"Request timeout: {e}")
+    
+except Exception as e:
+    print(f"Unexpected error: {e}")
+```
+
+## Response Structure
+
+Understand the response object:
+
+```python
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents="Hello!"
+)
+
+# Access the text
+print(response.text)
+
+# Access detailed candidate information
+candidate = response.candidates[0]
+print(f"Finish reason: {candidate.finish_reason}")
+print(f"Safety ratings: {candidate.safety_ratings}")
+
+# Access usage metadata
+print(f"Input tokens: {response.usage_metadata.prompt_token_count}")
+print(f"Output tokens: {response.usage_metadata.candidates_token_count}")
+print(f"Total tokens: {response.usage_metadata.total_token_count}")
+```
+
+## Safety Settings
+
+Configure content filtering:
+
+```python
+from google.genai.types import SafetySetting, HarmCategory, HarmBlockThreshold
+
+safety_settings = [
+    SafetySetting(
+        category=HarmCategory.HARM_CATEGORY_HARASSMENT,
+        threshold=HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE
+    ),
+    SafetySetting(
+        category=HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+        threshold=HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE
+    )
+]
+
+response = client.models.generate_content(
+    model="gemini-3.1-pro-preview",
+    contents="Your content here",
+    config=GenerateContentConfig(
+        safety_settings=safety_settings
+    )
+)
+
+# Check if response was blocked
+if response.candidates[0].finish_reason == "SAFETY":
+    print("Response was blocked due to safety filters")
+    for rating in response.candidates[0].safety_ratings:
+        print(f"{rating.category}: {rating.probability}")
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Clear Prompts" icon="message">
+    Be specific and provide context for better results
+  </Card>
+  
+  <Card title="Handle Errors" icon="shield-check">
+    Implement proper error handling for production apps
+  </Card>
+  
+  <Card title="Monitor Usage" icon="chart-line">
+    Track token consumption to manage costs
+  </Card>
+  
+  <Card title="Set Limits" icon="gauge">
+    Use max_output_tokens to control response length
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Multimodal" icon="images" href="/gemini/multimodal">
+    Learn to process images, video, and audio
+  </Card>
+  
+  <Card title="Function Calling" icon="function" href="/gemini/function-calling">
+    Connect Gemini to external tools and APIs
+  </Card>
+  
+  <Card title="Grounding" icon="anchor" href="/gemini/grounding">
+    Ground responses in real-time data
+  </Card>
+  
+  <Card title="Context Caching" icon="database" href="/gemini/context-caching">
+    Optimize costs with context caching
+  </Card>
+</CardGroup>

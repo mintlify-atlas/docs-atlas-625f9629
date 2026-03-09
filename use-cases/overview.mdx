@@ -1,0 +1,200 @@
+---
+title: 'Use Cases Overview'
+description: 'Explore common use cases and implementation patterns for Generative AI on Google Cloud'
+---
+
+## Introduction
+
+Generative AI on Google Cloud enables organizations to transform their workflows across industries. This section showcases real-world use cases with working code examples from production implementations.
+
+## Use Case Categories
+
+Our use cases span multiple domains, each demonstrating practical applications of Gemini and other generative AI models:
+
+<CardGroup cols={2}>
+  <Card title="Document Processing" icon="file-lines" href="/use-cases/document-processing">
+    Extract, classify, summarize, and analyze documents with multimodal AI
+  </Card>
+  <Card title="Customer Support" icon="headset" href="/use-cases/customer-support">
+    Build intelligent chatbots and automate support workflows
+  </Card>
+  <Card title="Code Generation" icon="code" href="/use-cases/code-generation">
+    Accelerate development with AI-powered coding assistance
+  </Card>
+  <Card title="Data Analytics" icon="chart-line" href="/use-cases/data-analytics">
+    Generate SQL, extract insights, and automate analysis with BigQuery
+  </Card>
+  <Card title="Education" icon="graduation-cap" href="/use-cases/education">
+    Create personalized learning experiences and educational content
+  </Card>
+  <Card title="Healthcare" icon="heart-pulse" href="/use-cases/healthcare">
+    Improve medical coding, clinical documentation, and patient care
+  </Card>
+  <Card title="Marketing" icon="bullhorn" href="/use-cases/marketing">
+    Generate compelling content and personalized campaigns
+  </Card>
+  <Card title="Finance" icon="dollar-sign" href="/use-cases/finance">
+    Automate KYC, risk analysis, and financial document processing
+  </Card>
+</CardGroup>
+
+## Common Implementation Patterns
+
+Across these use cases, several powerful patterns emerge:
+
+### Multimodal Understanding
+
+Gemini's native multimodality enables processing of text, images, audio, video, and PDFs in a single request:
+
+```python
+from google import genai
+from google.genai.types import Part
+
+client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+
+response = client.models.generate_content(
+    model="gemini-2.0-flash",
+    contents=[
+        "Analyze this document and image:",
+        Part.from_uri(file_uri="gs://bucket/document.pdf", mime_type="application/pdf"),
+        Part.from_uri(file_uri="gs://bucket/image.jpg", mime_type="image/jpeg"),
+    ],
+)
+
+print(response.text)
+```
+
+### Structured Output
+
+Control generation format using Pydantic models or JSON schemas:
+
+```python
+from pydantic import BaseModel
+from google.genai.types import GenerateContentConfig
+
+class ProductInfo(BaseModel):
+    name: str
+    price: float
+    category: str
+    in_stock: bool
+
+response = client.models.generate_content(
+    model="gemini-2.0-flash",
+    contents="Extract product information from this description...",
+    config=GenerateContentConfig(
+        response_schema=ProductInfo,
+        response_mime_type="application/json",
+    ),
+)
+
+product = response.parsed  # Pydantic model instance
+```
+
+### Function Calling
+
+Extend model capabilities by connecting to external tools and APIs:
+
+```python
+from google.genai.types import FunctionDeclaration, Tool
+
+get_weather = FunctionDeclaration(
+    name="get_weather",
+    description="Get current weather for a location",
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "location": {"type": "STRING", "description": "City name"}
+        },
+    },
+)
+
+tool = Tool(function_declarations=[get_weather])
+
+response = client.models.generate_content(
+    model="gemini-2.0-flash",
+    contents="What's the weather in San Francisco?",
+    config=GenerateContentConfig(tools=[tool]),
+)
+
+if response.function_calls:
+    for call in response.function_calls:
+        print(f"Function: {call.name}")
+        print(f"Args: {call.args}")
+```
+
+### Retrieval Augmented Generation (RAG)
+
+Ground responses in your own data using vector search:
+
+```python
+from langchain.vectorstores import FAISS
+from langchain_google_vertexai import VertexAIEmbeddings
+
+# Create embeddings and vector store
+embeddings = VertexAIEmbeddings(model_name="text-embedding-005")
+db = FAISS.from_documents(documents, embeddings)
+
+# Retrieve relevant context
+retriever = db.as_retriever(search_kwargs={"k": 5})
+relevant_docs = retriever.get_relevant_documents(query)
+
+# Generate with context
+context = "\n".join([doc.page_content for doc in relevant_docs])
+response = client.models.generate_content(
+    model="gemini-2.0-flash",
+    contents=f"Context: {context}\n\nQuestion: {query}",
+)
+```
+
+### Grounding with Google Search
+
+Enable real-time web search for up-to-date information:
+
+```python
+from google.genai.types import GoogleSearch, Tool
+
+search_tool = Tool(google_search=GoogleSearch())
+
+response = client.models.generate_content(
+    model="gemini-2.0-flash",
+    contents="What are the latest developments in quantum computing?",
+    config=GenerateContentConfig(tools=[search_tool]),
+)
+
+print(response.text)
+for chunk in response.candidates[0].grounding_metadata.search_entry_point.rendered_content:
+    print(f"Source: {chunk}")
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Start with the Right Model">
+    Use `gemini-2.0-flash` for fast, cost-effective tasks and `gemini-2.5-pro` for complex reasoning
+  </Step>
+  <Step title="Leverage System Instructions">
+    Define clear system instructions to guide model behavior consistently
+  </Step>
+  <Step title="Use Structured Output">
+    Constrain responses with schemas for reliable downstream processing
+  </Step>
+  <Step title="Implement Error Handling">
+    Handle rate limits, timeouts, and validation errors gracefully
+  </Step>
+  <Step title="Monitor and Evaluate">
+    Track model performance, costs, and user satisfaction metrics
+  </Step>
+</Steps>
+
+## Next Steps
+
+Explore specific use cases to see complete implementations:
+
+- **[Document Processing](/use-cases/document-processing)** - Extract and classify documents
+- **[Customer Support](/use-cases/customer-support)** - Build AI chatbots
+- **[Code Generation](/use-cases/code-generation)** - Accelerate development
+- **[Data Analytics](/use-cases/data-analytics)** - Query data with natural language
+
+<Note>
+All examples are drawn from the [Google Cloud Generative AI repository](https://github.com/GoogleCloudPlatform/generative-ai) with working notebooks you can run in Colab or Vertex AI Workbench.
+</Note>

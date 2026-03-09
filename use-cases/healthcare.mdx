@@ -1,0 +1,496 @@
+---
+title: 'Healthcare'
+description: 'Improve medical coding, clinical documentation, and patient care with AI-powered healthcare solutions'
+---
+
+## Overview
+
+Gemini enables healthcare organizations to automate medical coding, enhance clinical documentation, and improve patient care workflows. This guide demonstrates how to build healthcare AI applications using the Healthcare NL API, LangChain, and ReAct (Reasoning + Acting) patterns.
+
+<Note>
+**Important**: AI-generated healthcare information should always be reviewed by qualified medical professionals. Maintain a human-in-the-loop approach for all clinical applications.
+</Note>
+
+## Key Capabilities
+
+<CardGroup cols={2}>
+  <Card title="Medical Coding" icon="file-medical">
+    Suggest ICD-10, CPT, and DRG codes from clinical notes
+  </Card>
+  <Card title="Entity Extraction" icon="magnifying-glass">
+    Identify diagnoses, procedures, medications, and symptoms
+  </Card>
+  <Card title="Clinical Documentation" icon="notes-medical">
+    Enhance and standardize physician notes
+  </Card>
+  <Card title="ReAct Agents" icon="brain">
+    Combine reasoning with Healthcare API actions
+  </Card>
+  <Card title="Information Retrieval" icon="book-medical">
+    Ground responses in medical knowledge bases
+  </Card>
+  <Card title="Workflow Automation" icon="gears">
+    Streamline administrative healthcare tasks
+  </Card>
+</CardGroup>
+
+## Medical Coding Basics
+
+### Code Types
+
+- **ICD-10**: Diagnosis codes for conditions (e.g., diabetes, pneumonia) and symptoms
+- **CPT**: Procedure codes for services (e.g., MRI, surgery, office visits)
+- **DRG**: Diagnosis Related Groups for inpatient services
+- **HCPCS**: Healthcare Common Procedure Coding System for special procedures and medications
+
+### Why Medical Coding Matters
+
+Accurate medical coding is essential for:
+- Insurance reimbursement
+- Patient safety and continuity of care
+- Healthcare analytics and research
+- Compliance with regulations
+
+Medical coding errors lead to denied claims, delayed payments, and potential patient safety issues. AI can help by suggesting accurate codes and automating repetitive tasks.
+
+## Setup
+
+### Installation
+
+```bash
+pip install google-cloud-aiplatform langchain==0.1.16 langchain-google-vertexai
+```
+
+### Initialize Vertex AI
+
+```python
+import vertexai
+from langchain_google_vertexai import ChatVertexAI
+from langchain.agents import Tool, initialize_agent, AgentType
+from langchain.prompts import PromptTemplate
+
+PROJECT_ID = "your-project-id"
+LOCATION = "us-central1"
+
+vertexai.init(project=PROJECT_ID, location=LOCATION)
+
+# Initialize Gemini model
+llm = ChatVertexAI(
+    model_name="gemini-2.0-flash",
+    temperature=0.1,
+    max_output_tokens=2048,
+)
+```
+
+## Healthcare NL API Integration
+
+### Extract Medical Entities
+
+The Healthcare NL API identifies medical entities from clinical text:
+
+```python
+from google.cloud import healthcare_v1
+
+def extract_medical_entities(clinical_text: str) -> dict:
+    """Extract entities using Healthcare NL API.
+    
+    Returns:
+        Dictionary with diagnoses, procedures, medications, etc.
+    """
+    client = healthcare_v1.HealthcareServiceClient()
+    
+    # Configure Healthcare API
+    nlp_service = "projects/{}/locations/{}/services/nlp".format(
+        PROJECT_ID, LOCATION
+    )
+    
+    # Call NL API
+    response = client.analyze_entities(
+        nlp_service=nlp_service,
+        document_content=clinical_text,
+    )
+    
+    # Parse results
+    entities = {
+        "diagnoses": [],
+        "procedures": [],
+        "medications": [],
+        "symptoms": [],
+    }
+    
+    for entity in response.entities:
+        category = entity.entity_type.lower()
+        if category in entities:
+            entities[category].append({
+                "text": entity.mention_text,
+                "code": entity.vocabulary_codes,
+                "confidence": entity.confidence,
+            })
+    
+    return entities
+```
+
+## ReAct Agent for Medical Coding
+
+ReAct (Reasoning + Acting) agents combine language model reasoning with tool usage:
+
+### Define Medical Coding Tools
+
+```python
+from langchain.tools import Tool
+
+# Tool 1: Extract entities from clinical notes
+entity_extraction_tool = Tool(
+    name="ExtractMedicalEntities",
+    func=extract_medical_entities,
+    description="""Extract medical entities (diagnoses, procedures, medications, 
+    symptoms) from clinical text using Healthcare NL API. 
+    Input: clinical text string.
+    Output: JSON with categorized entities and confidence scores."""
+)
+
+# Tool 2: Search medical code database
+def search_medical_codes(entity: str, code_type: str) -> list[dict]:
+    """Search for relevant medical codes.
+    
+    Args:
+        entity: Medical term to search
+        code_type: 'ICD10', 'CPT', 'HCPCS'
+        
+    Returns:
+        List of matching codes with descriptions
+    """
+    # In production, query your medical code database
+    # This is a simplified example
+    code_database = {
+        "diabetes": [
+            {"code": "E11.9", "type": "ICD10", "description": "Type 2 diabetes mellitus without complications"},
+            {"code": "E11.65", "type": "ICD10", "description": "Type 2 diabetes mellitus with hyperglycemia"},
+        ],
+        "hypertension": [
+            {"code": "I10", "type": "ICD10", "description": "Essential (primary) hypertension"},
+        ],
+    }
+    
+    return code_database.get(entity.lower(), [])
+
+code_search_tool = Tool(
+    name="SearchMedicalCodes",
+    func=lambda x: search_medical_codes(x, "ICD10"),
+    description="""Search for ICD-10 diagnosis codes for a medical condition or symptom.
+    Input: medical term (e.g., 'diabetes', 'hypertension').
+    Output: List of relevant ICD-10 codes with descriptions."""
+)
+
+# Tool 3: Validate code combinations
+def validate_code_combination(codes: list[str]) -> dict:
+    """Validate that code combinations are appropriate.
+    
+    Args:
+        codes: List of medical codes
+        
+    Returns:
+        Validation results with warnings
+    """
+    # Implement your validation logic
+    return {
+        "valid": True,
+        "warnings": [],
+        "suggestions": ["Consider adding secondary diagnosis codes"],
+    }
+
+validation_tool = Tool(
+    name="ValidateCodes",
+    func=validate_code_combination,
+    description="""Validate medical code combinations for accuracy and completeness.
+    Input: comma-separated list of codes.
+    Output: Validation results with warnings and suggestions."""
+)
+```
+
+### Create ReAct Agent
+
+```python
+tools = [entity_extraction_tool, code_search_tool, validation_tool]
+
+# System prompt for medical coding agent
+system_prompt = """
+You are an expert medical coding specialist assistant.
+
+Your role:
+1. Analyze clinical notes to identify diagnoses, procedures, and symptoms
+2. Suggest appropriate ICD-10, CPT, and HCPCS codes
+3. Validate code combinations for accuracy
+4. Explain your reasoning clearly
+
+IMPORTANT:
+- Always use tools to extract entities and search codes
+- Provide confidence levels for code suggestions
+- Flag any ambiguous or unclear clinical documentation
+- Recommend additional documentation when needed
+- Remember: Final coding decisions require human review
+"""
+
+# Initialize ReAct agent
+agent = initialize_agent(
+    tools=tools,
+    llm=llm,
+    agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+    verbose=True,
+    max_iterations=5,
+    system_message=system_prompt,
+)
+```
+
+### Process Clinical Notes
+
+```python
+clinical_note = """
+Patient: 65-year-old male
+Chief Complaint: Shortness of breath and chest discomfort
+
+History of Present Illness:
+Patient presents with worsening shortness of breath over the past 3 days.
+Reports chest tightness and fatigue. Known history of Type 2 diabetes mellitus
+and hypertension, both currently managed with medication.
+
+Vital Signs:
+- BP: 145/92 mmHg
+- HR: 88 bpm
+- O2 Saturation: 94% on room air
+
+Assessment:
+1. Acute exacerbation of congestive heart failure
+2. Poorly controlled hypertension
+3. Type 2 diabetes mellitus
+
+Plan:
+- Admit for observation
+- Increase diuretic dose
+- Adjust antihypertensive medications
+- Monitor blood glucose
+"""
+
+prompt = f"""
+Analyze this clinical note and suggest appropriate medical codes.
+
+Clinical Note:
+{clinical_note}
+
+Provide:
+1. Extracted medical entities
+2. Recommended ICD-10 diagnosis codes
+3. Confidence levels for each code
+4. Any documentation concerns or recommendations
+"""
+
+result = agent.run(prompt)
+print(result)
+```
+
+### Agent Output Example
+
+```markdown
+## Medical Coding Analysis
+
+### Extracted Entities
+**Diagnoses:**
+- Congestive heart failure (acute exacerbation)
+- Hypertension (poorly controlled)
+- Type 2 diabetes mellitus
+
+**Symptoms:**
+- Shortness of breath
+- Chest discomfort
+- Fatigue
+
+### Recommended ICD-10 Codes
+
+1. **I50.23** - Acute on chronic systolic congestive heart failure
+   - Confidence: HIGH
+   - Source: "Acute exacerbation of congestive heart failure"
+   
+2. **I10** - Essential (primary) hypertension
+   - Confidence: HIGH
+   - Source: "Poorly controlled hypertension", BP: 145/92
+   
+3. **E11.9** - Type 2 diabetes mellitus without complications
+   - Confidence: MEDIUM
+   - Source: "Type 2 diabetes mellitus"
+   - Note: Consider E11.65 if hyperglycemia documented
+
+### Documentation Recommendations
+
+1. **Specify CHF type**: Document whether systolic, diastolic, or combined
+2. **Diabetes complications**: Clarify if complications present
+3. **Chest discomfort cause**: Link symptom to primary diagnosis
+4. **Medication details**: Document specific medications for coding
+
+### Code Validation
+Code combination is appropriate. Consider adding:
+- R06.02 (Shortness of breath) as secondary symptom code
+- Z79.4 (Long-term insulin use) if applicable
+
+**IMPORTANT**: These are AI-generated suggestions. Final codes must be 
+reviewed and assigned by a certified medical coder.
+```
+
+## Clinical Documentation Improvement
+
+### Enhance Physician Notes
+
+```python
+def improve_clinical_documentation(note: str) -> dict:
+    """Suggest improvements to clinical documentation."""
+    prompt = f"""
+Analyze this clinical note and suggest improvements for:
+1. Specificity and detail
+2. Missing information that affects coding
+3. Clarity and organization
+4. Medical necessity documentation
+
+Note:
+{note}
+
+Provide specific, actionable recommendations.
+    """
+    
+    response = llm.invoke(prompt)
+    
+    return {
+        "original": note,
+        "recommendations": response.content,
+    }
+```
+
+### Query Enhancement
+
+```python
+def generate_physician_queries(note: str, codes: list[str]) -> list[str]:
+    """Generate queries for physicians to improve documentation."""
+    prompt = f"""
+Based on this clinical note and suggested codes, generate specific questions
+for the physician to clarify documentation:
+
+Note: {note}
+
+Suggested Codes: {', '.join(codes)}
+
+Format each query as:
+- Clear, specific question
+- Why the information is needed
+- How it affects coding/reimbursement
+    """
+    
+    response = llm.invoke(prompt)
+    
+    # Parse queries from response
+    queries = response.content.split("\n\n")
+    return queries
+```
+
+## Structured Output for Downstream Systems
+
+```python
+from pydantic import BaseModel
+from google import genai
+from google.genai.types import GenerateContentConfig
+
+class MedicalCode(BaseModel):
+    code: str
+    code_type: str  # "ICD10", "CPT", "HCPCS"
+    description: str
+    confidence: float
+    supporting_text: str
+
+class CodingSuggestion(BaseModel):
+    patient_id: str
+    encounter_date: str
+    primary_diagnosis: MedicalCode
+    secondary_diagnoses: list[MedicalCode]
+    procedures: list[MedicalCode]
+    documentation_queries: list[str]
+    coder_notes: str
+
+client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+
+response = client.models.generate_content(
+    model="gemini-2.0-flash",
+    contents=f"Analyze this clinical note and extract coding information: {clinical_note}",
+    config=GenerateContentConfig(
+        response_schema=CodingSuggestion,
+        response_mime_type="application/json",
+    ),
+)
+
+coding_suggestion = response.parsed
+
+# Send to EHR system or coding workflow
+print(f"Primary Diagnosis: {coding_suggestion.primary_diagnosis.code}")
+print(f"Confidence: {coding_suggestion.primary_diagnosis.confidence}")
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Always Use Human-in-the-Loop">
+    AI suggestions must be reviewed by certified medical coders
+  </Step>
+  <Step title="Ground in Medical Knowledge">
+    Use Healthcare NL API and validated medical code databases
+  </Step>
+  <Step title="Provide Confidence Scores">
+    Help coders prioritize review of low-confidence suggestions
+  </Step>
+  <Step title="Track Documentation Gaps">
+    Generate physician queries to improve future documentation
+  </Step>
+  <Step title="Validate Code Combinations">
+    Check for conflicting or incomplete code sets
+  </Step>
+  <Step title="Monitor Performance">
+    Track coding accuracy and agreement rates with human coders
+  </Step>
+  <Step title="Ensure Compliance">
+    Maintain HIPAA compliance and audit trails
+  </Step>
+</Steps>
+
+## Use Case Outcomes
+
+### Benefits
+
+- **Faster Coding**: Reduce time spent on code lookup by 50-70%
+- **Improved Accuracy**: Decrease coding errors and claim denials
+- **Better Documentation**: Identify gaps proactively
+- **Reduced Burnout**: Automate repetitive tasks for medical coders
+- **Enhanced Revenue**: Improve coding specificity and completeness
+
+### Metrics to Track
+
+```python
+class CodingMetrics(BaseModel):
+    total_encounters: int
+    ai_assisted_encounters: int
+    ai_agreement_rate: float  # % where coder accepted AI suggestions
+    average_time_per_encounter: float  # minutes
+    documentation_queries_generated: int
+    claim_denial_rate: float
+
+# Monitor and improve over time
+def track_coding_performance(metrics: CodingMetrics):
+    print(f"AI Agreement Rate: {metrics.ai_agreement_rate * 100:.1f}%")
+    print(f"Time Savings: {metrics.average_time_per_encounter:.1f} min/encounter")
+    print(f"Denial Rate: {metrics.claim_denial_rate * 100:.1f}%")
+```
+
+## Related Resources
+
+- [Healthcare NL API Documentation](https://cloud.google.com/healthcare-api/docs/how-tos/nlp)
+- [ReAct Agent Pattern](/patterns/react)
+- [Function Calling Guide](/features/function-calling)
+- [Structured Output](/features/structured-output)
+
+<Note>
+**Disclaimer**: This guide is for educational purposes. Medical coding and clinical decision-making require qualified healthcare professionals. Always comply with HIPAA and other healthcare regulations.
+</Note>

@@ -1,0 +1,445 @@
+---
+title: 'Customer Support'
+description: 'Build intelligent chatbots, automate support workflows, and deliver personalized customer experiences'
+---
+
+## Overview
+
+Gemini enables you to build sophisticated customer support solutions that understand multimodal inputs (text, images, audio), integrate with your business systems, and provide personalized, context-aware responses. This guide demonstrates practical implementations using real-world examples.
+
+## Key Capabilities
+
+<CardGroup cols={2}>
+  <Card title="Multimodal Chat" icon="comments">
+    Process text, images, and documents in conversations
+  </Card>
+  <Card title="Function Calling" icon="plug">
+    Connect to inventory, CRM, and business systems
+  </Card>
+  <Card title="Live API" icon="microphone">
+    Real-time audio conversations with customers
+  </Card>
+  <Card title="Visual Search" icon="image">
+    Find products from customer photos
+  </Card>
+  <Card title="Google Search Grounding" icon="magnifying-glass">
+    Access real-time information from the web
+  </Card>
+  <Card title="Structured Output" icon="list">
+    Extract data for downstream processing
+  </Card>
+</CardGroup>
+
+## Setup
+
+### Installation
+
+```bash
+pip install google-genai pydantic numpy
+```
+
+### Initialize Client
+
+```python
+import os
+from google import genai
+from google.genai.types import (
+    Content,
+    FunctionDeclaration,
+    GenerateContentConfig,
+    GoogleSearch,
+    Part,
+    Tool,
+)
+
+PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT")
+LOCATION = "us-central1"
+
+client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+```
+
+## Visual Product Search
+
+Enable customers to find products by uploading images:
+
+### Define System Instructions
+
+```python
+system_instruction = """
+You are an expert sales assistant specializing in furniture recommendations.
+All questions should be answered comprehensively with details.
+"""
+```
+
+### Process Customer Query with Image
+
+```python
+# Customer uploads image and asks question
+customer_query = "Do you have chairs similar to the one in this picture, but in red?"
+customer_image_url = "https://storage.googleapis.com/samples/armchair.png"
+
+# Load product catalog (images from Cloud Storage)
+product_catalog_parts = []
+for product in product_catalog:
+    product_catalog_parts.append(f"Chair (id={product['id']}):")
+    product_catalog_parts.append(
+        Part.from_uri(file_uri=product["image_url"], mime_type="image/png")
+    )
+
+# Generate response
+response = client.models.generate_content(
+    model="gemini-2.0-flash",
+    contents=[
+        customer_query,
+        Part.from_uri(file_uri=customer_image_url, mime_type="image/png"),
+        "catalog:",
+        product_catalog_parts,
+    ],
+    config=GenerateContentConfig(
+        system_instruction=system_instruction,
+    ),
+)
+
+print(response.text)
+```
+
+### Extract Structured Results
+
+Use structured output to get machine-readable results:
+
+```python
+from pydantic import BaseModel
+
+class MatchedFurnitureInfo(BaseModel):
+    id: int
+    match_score: int
+    match_reason: str
+
+# Define response schema
+response_schema = {
+    "type": "ARRAY",
+    "items": {
+        "type": "OBJECT",
+        "properties": {
+            "id": {"type": "INTEGER"},
+            "match_reason": {"type": "STRING"},
+        },
+    },
+}
+
+# Convert natural language response to structured format
+structured_response = client.models.generate_content(
+    model="gemini-2.0-flash",
+    contents=response.text,
+    config=GenerateContentConfig(
+        system_instruction="Convert the given text to JSON",
+        response_mime_type="application/json",
+        response_schema=response_schema,
+    ),
+)
+
+matching_items = structured_response.parsed
+for item in matching_items:
+    product_id = item["id"]
+    reason = item["match_reason"]
+    print(f"Product {product_id}: {reason}")
+```
+
+## Multimodal Reasoning
+
+### Room Visualization
+
+Help customers visualize products in their space:
+
+```python
+system_instruction = """
+You are an interior designer.
+Your mission is to help customers create living spaces that balance 
+functionality and beauty through personalized service.
+"""
+
+customer_query = "Would this chair fit in my room?"
+chair_url = "gs://samples/red-chair.png"
+room_url = "gs://samples/living-room.png"
+
+response = client.models.generate_content(
+    model="gemini-2.0-flash",
+    contents=[
+        "Chair:",
+        Part.from_uri(file_uri=chair_url, mime_type="image/png"),
+        "Living room:",
+        Part.from_uri(file_uri=room_url, mime_type="image/png"),
+        customer_query,
+    ],
+    config=GenerateContentConfig(
+        system_instruction=system_instruction,
+    ),
+)
+
+print(response.text)
+```
+
+### Generate Visualization
+
+Create images showing products in customer environments:
+
+```python
+response = client.models.generate_content(
+    model="gemini-2.0-flash-preview-image-generation",
+    contents=[
+        "Chair:", Part.from_uri(file_uri=chair_url, mime_type="image/png"),
+        "Living room:", Part.from_uri(file_uri=room_url, mime_type="image/png"),
+        "Create an image with the chair integrated in the living room",
+    ],
+    config=GenerateContentConfig(
+        response_modalities=["TEXT", "IMAGE"],
+    ),
+)
+
+# Display generated image
+from IPython.display import Image, display
+for part in response.candidates[0].content.parts:
+    if part.inline_data:
+        display(Image(data=part.inline_data.data))
+```
+
+## Function Calling
+
+### Define Business Functions
+
+Connect to inventory and location systems:
+
+```python
+get_product_info_function = FunctionDeclaration(
+    name="get_product_info",
+    description="Get stock amount and identifier for a product",
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "product_name": {"type": "STRING", "description": "Product name"}
+        },
+    },
+)
+
+get_store_location_function = FunctionDeclaration(
+    name="get_store_location",
+    description="Get the location of the closest store",
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "location": {"type": "STRING", "description": "User location"}
+        },
+    },
+)
+
+retail_tool = Tool(
+    function_declarations=[
+        get_product_info_function,
+        get_store_location_function,
+    ],
+)
+```
+
+### Use in Chat Session
+
+```python
+chat = client.chats.create(
+    model="gemini-2.0-flash",
+    config=GenerateContentConfig(
+        temperature=0,
+        tools=[retail_tool],
+    ),
+)
+
+customer_query = "Is this chair available at a store near me? I'm at Google Cloud Next 2025."
+response = chat.send_message(customer_query)
+
+# Model generates function calls
+for function_call in response.function_calls:
+    print(f"Function: {function_call.name}")
+    print(f"Arguments: {function_call.args}")
+```
+
+### Implement Function Handlers
+
+```python
+from google.genai.types import GoogleSearch
+
+def get_store_location(location: str):
+    """Use Google Search to find location information."""
+    google_search_tool = Tool(google_search=GoogleSearch())
+    
+    prompt = f"What is the location for {location}?"
+    
+    response = client.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=prompt,
+        config=GenerateContentConfig(tools=[google_search_tool]),
+    )
+    
+    return {"store": response.text}
+
+def get_product_info(product_name: str):
+    """Query inventory database."""
+    # Your database query logic here
+    return {"id": "3", "in_stock": "yes"}
+
+# Execute function calls
+function_response_parts = []
+for function_call in response.function_calls:
+    if function_call.name == "get_store_location":
+        result = get_store_location(**function_call.args)
+    elif function_call.name == "get_product_info":
+        result = get_product_info(**function_call.args)
+    
+    function_response_parts.append(
+        Part.from_function_response(
+            name=function_call.name,
+            response=result,
+        )
+    )
+
+# Send function results back to model
+final_response = chat.send_message(function_response_parts)
+print(final_response.text)
+```
+
+## Real-Time Audio Conversations
+
+### Text-to-Audio Live API
+
+Build voice-enabled support:
+
+```python
+import numpy as np
+from IPython.display import Audio, Markdown, display
+from google.genai.types import LiveConnectConfig
+
+config = LiveConnectConfig(
+    response_modalities=["AUDIO"],
+    tools=[Tool(google_search=GoogleSearch())],
+)
+
+async def main():
+    async with client.aio.live.connect(
+        model="gemini-2.0-flash-live-preview",
+        config=config
+    ) as session:
+        
+        async def send():
+            text_input = input("You: ")
+            if text_input.lower() in ("q", "quit", "exit"):
+                return False
+            await session.send_client_content(
+                turns=Content(role="user", parts=[Part(text=text_input)])
+            )
+            return True
+        
+        async def receive():
+            audio_data = []
+            
+            async for message in session.receive():
+                if (
+                    message.server_content.model_turn
+                    and message.server_content.model_turn.parts
+                ):
+                    for part in message.server_content.model_turn.parts:
+                        if part.inline_data:
+                            audio_data.append(
+                                np.frombuffer(part.inline_data.data, dtype=np.int16)
+                            )
+                
+                if message.server_content.turn_complete:
+                    display(Markdown("**Assistant:**"))
+                    display(Audio(np.concatenate(audio_data), rate=24000, autoplay=True))
+                    break
+        
+        while True:
+            if not await send():
+                break
+            await receive()
+
+# Run the conversation
+await main()
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Provide Rich Context">
+    Include product catalogs, user history, and relevant images in prompts
+  </Step>
+  <Step title="Use System Instructions">
+    Define agent personality and guidelines consistently
+  </Step>
+  <Step title="Implement Function Calling">
+    Connect to live inventory, CRM, and business systems
+  </Step>
+  <Step title="Structure Outputs">
+    Extract structured data for analytics and downstream workflows
+  </Step>
+  <Step title="Handle Errors Gracefully">
+    Implement fallbacks for API failures and invalid inputs
+  </Step>
+  <Step title="Monitor Conversations">
+    Track customer satisfaction and identify improvement areas
+  </Step>
+</Steps>
+
+## Use Case Examples
+
+### Ticket Routing
+
+```python
+from enum import Enum
+
+class TicketCategory(Enum):
+    BILLING = "billing"
+    TECHNICAL = "technical"
+    PRODUCT = "product"
+    ACCOUNT = "account"
+
+response = client.models.generate_content(
+    model="gemini-2.0-flash",
+    contents=f"Categorize this support ticket: {ticket_text}",
+    config=GenerateContentConfig(
+        response_schema=TicketCategory,
+        response_mime_type="text/x.enum",
+    ),
+)
+
+route_to_team(response.parsed)
+```
+
+### Sentiment Analysis
+
+```python
+class Sentiment(BaseModel):
+    score: float  # -1.0 to 1.0
+    emotion: str
+    urgency: str
+
+response = client.models.generate_content(
+    model="gemini-2.0-flash",
+    contents=f"Analyze sentiment: {customer_message}",
+    config=GenerateContentConfig(
+        response_schema=Sentiment,
+        response_mime_type="application/json",
+    ),
+)
+
+sentiment = response.parsed
+if sentiment.urgency == "high":
+    escalate_to_human()
+```
+
+## Related Resources
+
+- [Function Calling Guide](/features/function-calling)
+- [Live API Documentation](/features/live-api)
+- [Structured Output](/features/structured-output)
+- [Google Search Grounding](/features/grounding)
+
+<Note>
+For production deployments, implement rate limiting, caching, and monitoring to ensure reliable service.
+</Note>

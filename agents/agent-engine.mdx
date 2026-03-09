@@ -1,0 +1,565 @@
+---
+title: "Vertex AI Agent Engine"
+description: "Deploy and scale production agents with managed infrastructure and Memory Bank"
+---
+
+## Overview
+
+Vertex AI Agent Engine is a fully managed platform for deploying AI agents at scale. It handles infrastructure, scaling, and operational complexity so you can focus on building agent logic.
+
+**Key features:**
+- Automatic scaling from zero to millions of requests
+- Built-in Memory Bank for persistent agent memory
+- Support for ADK, LangGraph, and custom frameworks
+- Terraform deployment automation
+- Integrated monitoring and logging
+
+<Note>
+Agent Engine includes a **free Express Mode** for 90 days with no billing account required—perfect for learning and prototyping.
+</Note>
+
+## Deployment Methods
+
+Agent Engine supports three deployment approaches:
+
+<CardGroup cols={3}>
+  <Card title="Express Mode" icon="rocket">
+    **Free & Fast**
+    
+    - No billing account for 90 days
+    - Simple API key authentication
+    - Deploy with ADK CLI
+    - Perfect for learning
+  </Card>
+  
+  <Card title="Agent Object" icon="cube">
+    **Interactive Development**
+    
+    - Create agents in notebooks
+    - Direct deployment from code
+    - Ideal for experimentation
+    - Requires Cloud Storage bucket
+  </Card>
+  
+  <Card title="Inline Source" icon="file-code">
+    **Production CI/CD**
+    
+    - Deploy from source files
+    - Version control friendly
+    - Terraform compatible
+    - No Cloud Storage needed
+  </Card>
+</CardGroup>
+
+## Express Mode Deployment
+
+The fastest way to deploy your first agent:
+
+<Steps>
+  <Step title="Get API Key">
+    1. Sign up at [console.cloud.google.com/expressmode](https://console.cloud.google.com/expressmode)
+    2. Navigate to **APIs & Services > Credentials**
+    3. Copy your **Generative Language API Key**
+  </Step>
+  
+  <Step title="Install ADK">
+    ```bash
+    pip install google-adk
+    ```
+  </Step>
+  
+  <Step title="Create Agent">
+    ```bash
+    adk create my_agent --api_key=YOUR_API_KEY
+    ```
+    
+    This creates a directory with:
+    - `agent.py` - Agent definition
+    - `requirements.txt` - Dependencies
+    - `.adk/config.json` - Configuration
+  </Step>
+  
+  <Step title="Deploy">
+    ```bash
+    adk deploy agent_engine my_agent
+    ```
+    
+    Deployment takes 5-10 minutes. You'll receive a resource name like:
+    ```
+    projects/123.../locations/us-central1/reasoningEngines/456...
+    ```
+  </Step>
+  
+  <Step title="Query Your Agent">
+    ```python
+    import vertexai
+    
+    client = vertexai.Client(api_key=api_key)
+    agent = client.agent_engines.get(name=agent_resource_name)
+    
+    async for item in agent.async_stream_query(
+        message="What are the latest AI announcements from Google?",
+        user_id="demo_user",
+    ):
+        if "content" in item and item["content"]:
+            for part in item["content"]["parts"]:
+                if "text" in part:
+                    print(part["text"], end="", flush=True)
+    ```
+  </Step>
+</Steps>
+
+## Agent Object Deployment
+
+Deploy agents created in notebooks or Python scripts:
+
+<CodeGroup>
+```python Create Agent
+from google.adk.agents import LlmAgent
+from google.adk.tools import google_search
+from vertexai import agent_engines
+
+# Create agent in memory
+agent = LlmAgent(
+    name="search_agent",
+    model="gemini-2.5-flash",
+    description="A production agent that can search the web",
+    instruction="Use Google Search for fresh information. Cite sources.",
+    tools=[google_search],
+)
+
+# Wrap in AdkApp for deployment
+adk_app = agent_engines.AdkApp(
+    agent=agent,
+    enable_tracing=True,
+)
+```
+
+```python Deploy to Agent Engine
+import vertexai
+
+client = vertexai.Client(
+    project="your-project-id",
+    location="us-central1"
+)
+
+remote_app = client.agent_engines.create(
+    agent=adk_app,
+    config=dict(
+        display_name="Search Agent",
+        description="Production web search agent",
+        labels={"agent_type": "search"},
+        requirements=["google-cloud-aiplatform[adk,agent_engines]"],
+        staging_bucket="gs://your-bucket",
+    ),
+)
+
+print(f"Deployed: {remote_app.api_resource.name}")
+```
+
+```python Use Deployed Agent
+# Create session
+session = await remote_app.async_create_session(user_id="user_123")
+
+# Query with streaming
+async for event in remote_app.async_stream_query(
+    user_id="user_123",
+    session_id=session["id"],
+    message="What are the top tech trends in 2025?",
+):
+    if event.get("content", {}).get("parts"):
+        for part in event["content"]["parts"]:
+            if "text" in part:
+                print(part["text"], end="", flush=True)
+```
+</CodeGroup>
+
+## Inline Source Deployment
+
+Deploy agents from source files for CI/CD pipelines:
+
+<Steps>
+  <Step title="Project Structure">
+    ```
+    my_agent/
+    ├── agent_package/
+    │   ├── __init__.py
+    │   └── agent.py          # Agent definition
+    ├── deployment/
+    │   └── deploy.py         # AdkApp wrapper
+    └── requirements.txt
+    ```
+  </Step>
+  
+  <Step title="Define Agent">
+    ```python agent_package/agent.py
+    from google.adk.agents import LlmAgent
+    from google.adk.tools import google_search
+    
+    root_agent = LlmAgent(
+        name="academic_research",
+        model="gemini-2.5-flash",
+        description="Answer academic research questions",
+        instruction="Search for scholarly information",
+        tools=[google_search],
+    )
+    ```
+  </Step>
+  
+  <Step title="Create Deployment Wrapper">
+    ```python deployment/deploy.py
+    from vertexai import agent_engines
+    from agent_package.agent import root_agent
+    
+    adk_app = agent_engines.AdkApp(
+        agent=root_agent,
+        enable_tracing=True,
+    )
+    ```
+  </Step>
+  
+  <Step title="Deploy">
+    ```python
+    import vertexai
+    
+    client = vertexai.Client(
+        project="your-project",
+        location="us-central1"
+    )
+    
+    agent = client.agent_engines.create(
+        config={
+            "display_name": "Academic Research Agent",
+            "source_packages": ["agent_package", "deployment", "requirements.txt"],
+            "entrypoint_module": "deployment.deploy",
+            "entrypoint_object": "adk_app",
+            "class_methods": [
+                {
+                    "name": "async_stream_query",
+                    "api_mode": "async_stream",
+                    "description": "Stream responses",
+                },
+                {
+                    "name": "async_create_session",
+                    "api_mode": "async",
+                    "description": "Create session",
+                },
+            ],
+        },
+    )
+    ```
+  </Step>
+</Steps>
+
+## Memory Bank Integration
+
+Memory Bank provides persistent, context-aware memory for agents:
+
+### What is Memory Bank?
+
+Memory Bank is a managed service that gives agents the ability to:
+- **Remember** user preferences and context across sessions
+- **Consolidate** information like a human brain during sleep
+- **Retrieve** relevant memories for personalized interactions
+- **Scale** to millions of users with automatic memory management
+
+<Note>
+Memory Bank uses Gemini models to automatically extract, consolidate, and retrieve memories from conversations—no manual memory management required.
+</Note>
+
+### Creating an Agent with Memory Bank
+
+<CodeGroup>
+```python Setup Memory Bank
+import vertexai
+from vertexai import types
+
+# Configuration aliases
+MemoryBankConfig = types.ReasoningEngineContextSpecMemoryBankConfig
+SimilaritySearchConfig = types.ReasoningEngineContextSpecMemoryBankConfigSimilaritySearchConfig
+GenerationConfig = types.ReasoningEngineContextSpecMemoryBankConfigGenerationConfig
+
+client = vertexai.Client(project=PROJECT_ID, location=LOCATION)
+
+# Create Memory Bank configuration
+memory_config = MemoryBankConfig(
+    similarity_search_config=SimilaritySearchConfig(
+        embedding_model=f"projects/{PROJECT_ID}/locations/{LOCATION}/publishers/google/models/text-embedding-005"
+    ),
+    generation_config=GenerationConfig(
+        model=f"projects/{PROJECT_ID}/locations/{LOCATION}/publishers/google/models/gemini-2.5-flash"
+    ),
+)
+
+# Create Agent Engine with Memory Bank
+agent_engine = client.agent_engines.create(
+    config={"context_spec": {"memory_bank_config": memory_config}}
+)
+```
+
+```python Store Conversation
+# Create session
+session = client.agent_engines.sessions.create(
+    name=agent_engine.api_resource.name,
+    user_id="guest_emma_1234",
+    config={"display_name": "Check-in conversation"},
+)
+
+# Add conversation turns
+conversation = [
+    {"role": "user", "message": "I'm vegetarian and lactose intolerant"},
+    {"role": "model", "message": "I've noted your dietary preferences"},
+    {"role": "user", "message": "I prefer high floor rooms, away from elevator"},
+]
+
+for turn in conversation:
+    client.agent_engines.sessions.events.append(
+        name=session.response.name,
+        author="guest_emma_1234",
+        invocation_id=str(i),
+        timestamp=datetime.datetime.now(tz=datetime.timezone.utc),
+        config={
+            "content": {"role": turn["role"], "parts": [{"text": turn["message"]}]}
+        },
+    )
+```
+
+```python Generate Memories
+# Extract memories from conversation
+operation = client.agent_engines.memories.generate(
+    name=agent_engine.api_resource.name,
+    vertex_session_source={"session": session.response.name},
+    config={"wait_for_completion": True},
+)
+
+# Memories automatically extracted:
+# - User is vegetarian
+# - User is lactose intolerant  
+# - User prefers high floor rooms
+# - User prefers rooms away from elevator
+```
+
+```python Retrieve Memories
+# Get all memories for user
+results = client.agent_engines.memories.retrieve(
+    name=agent_engine.api_resource.name,
+    scope={"user_id": "guest_emma_1234"},
+)
+
+for memory in results:
+    print(memory.memory.fact)
+
+# Similarity search for specific questions
+results = client.agent_engines.memories.retrieve(
+    name=agent_engine.api_resource.name,
+    scope={"user_id": "guest_emma_1234"},
+    similarity_search_params={
+        "search_query": "What are the dietary restrictions?",
+        "top_k": 3,
+    },
+)
+```
+</CodeGroup>
+
+### Memory Retrieval Methods
+
+<CardGroup cols={2}>
+  <Card title="Scope-Based" icon="database">
+    **Get all memories** for a user
+    
+    Use when:
+    - Building user profiles
+    - Displaying preference dashboards
+    - Small number of memories
+    
+    ```python
+    results = memories.retrieve(
+        scope={"user_id": user_id}
+    )
+    ```
+  </Card>
+  
+  <Card title="Similarity Search" icon="magnifying-glass">
+    **Get relevant memories** for specific questions
+    
+    Use when:
+    - Answering targeted questions
+    - User has many memories
+    - Need fast, focused responses
+    
+    ```python
+    results = memories.retrieve(
+        scope={"user_id": user_id},
+        similarity_search_params={
+            "search_query": "dietary needs?",
+            "top_k": 3,
+        },
+    )
+    ```
+  </Card>
+</CardGroup>
+
+## Terraform Deployment
+
+Automate infrastructure and agent deployment:
+
+<CodeGroup>
+```hcl main.tf
+module "agent_engine_project" {
+  source  = "terraform-google-modules/project-factory/google"
+  version = "~> 14.0"
+
+  name              = "agent-engine-demo"
+  billing_account   = var.billing_account
+  org_id            = var.org_id
+  
+  activate_apis = [
+    "aiplatform.googleapis.com",
+    "cloudaicompanion.googleapis.com",
+  ]
+}
+
+resource "google_vertex_ai_agent_engine" "demo_agent" {
+  project  = module.agent_engine_project.project_id
+  location = "us-central1"
+  
+  display_name = "Demo Agent"
+  
+  reasoning_engine {
+    source_code {
+      inline_source {
+        source_packages     = ["agent_package"]
+        entrypoint_module   = "agent_package.agent"
+        entrypoint_object   = "root_agent"
+      }
+    }
+  }
+}
+```
+
+```bash Deploy
+terraform init
+terraform plan
+terraform apply
+```
+</CodeGroup>
+
+## Multi-Agent Systems
+
+Deploy orchestrated multi-agent architectures:
+
+```python Multi-Agent with Claude
+from google.adk.agents import LlmAgent
+from google.adk.runners import RunnerContext
+
+# Create specialized agents
+research_agent = LlmAgent(
+    name="researcher",
+    model="claude-4-sonnet@20250514",
+    instruction="Search and synthesize research",
+)
+
+writing_agent = LlmAgent(
+    name="writer",
+    model="gemini-2.5-flash",
+    instruction="Create polished content",
+)
+
+# Orchestrator
+root_agent = LlmAgent(
+    name="orchestrator",
+    model="gemini-2.5-flash",
+    instruction="Route tasks to specialized agents",
+    agents=[research_agent, writing_agent],
+)
+
+# Deploy
+adk_app = agent_engines.AdkApp(agent=root_agent)
+remote = client.agent_engines.create(agent=adk_app, config=deployment_config)
+```
+
+## Monitoring and Observability
+
+<CardGroup cols={2}>
+  <Card title="Cloud Logging" icon="file-lines">
+    All agent requests automatically logged to Cloud Logging
+    
+    ```bash
+    gcloud logging read \
+      "resource.type=vertex_ai_agent_engine"
+    ```
+  </Card>
+  
+  <Card title="Cloud Trace" icon="chart-line">
+    Enable tracing for performance monitoring
+    
+    ```python
+    adk_app = agent_engines.AdkApp(
+        agent=agent,
+        enable_tracing=True,
+    )
+    ```
+  </Card>
+  
+  <Card title="Custom Metrics" icon="gauge">
+    Export custom metrics to Cloud Monitoring
+    
+    Track:
+    - Request latency
+    - Token usage
+    - Error rates
+    - Memory operations
+  </Card>
+  
+  <Card title="Audit Logs" icon="shield-check">
+    Compliance-ready audit trails
+    
+    - Who deployed what
+    - Configuration changes
+    - Access patterns
+  </Card>
+</CardGroup>
+
+## Best Practices
+
+<Steps>
+  <Step title="Use Express Mode for Learning">
+    Start with Express Mode to understand Agent Engine without billing setup
+  </Step>
+  
+  <Step title="Version Control Your Agents">
+    Use Inline Source deployment for production to maintain agent code in Git
+  </Step>
+  
+  <Step title="Implement Sessions">
+    Always create sessions for stateful conversations with Memory Bank
+  </Step>
+  
+  <Step title="Monitor Token Usage">
+    Track Gemini token consumption through Cloud Monitoring for cost optimization
+  </Step>
+  
+  <Step title="Use Similarity Search">
+    For users with extensive history, use similarity search instead of retrieving all memories
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="ADK Documentation" href="/agents/adk" icon="code">
+    Learn how to build agents with the Agent Development Kit
+  </Card>
+  
+  <Card title="Memory Bank Guide" href="https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/memory-bank" icon="brain">
+    Deep dive into Memory Bank capabilities
+  </Card>
+  
+  <Card title="Terraform Examples" href="https://github.com/GoogleCloudPlatform/generative-ai" icon="cloud">
+    Infrastructure-as-code templates
+  </Card>
+  
+  <Card title="Multi-Agent Patterns" href="https://github.com/GoogleCloudPlatform/generative-ai" icon="network-wired">
+    Build collaborative agent systems
+  </Card>
+</CardGroup>

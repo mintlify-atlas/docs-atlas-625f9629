@@ -1,0 +1,749 @@
+---
+title: "Agent Development Kit (ADK)"
+description: "Build custom AI agents with Google's open-source framework for Python and Java"
+---
+
+## What is ADK?
+
+The Agent Development Kit (ADK) is an open-source framework for building AI agents that can reason, use tools, and maintain state. It provides a modular, composable architecture that works locally and deploys seamlessly to Agent Engine.
+
+**Key features:**
+- **Language SDKs**: Python and Java implementations
+- **Built-in tools**: Google Search, code execution, function calling
+- **Local testing**: Develop and test agents on your machine
+- **Easy deployment**: One command to deploy to Agent Engine
+- **Multi-agent support**: Build collaborative agent systems
+
+<Note>
+ADK agents can use any Gemini model or third-party models like Claude and Llama through Model Garden.
+</Note>
+
+## Installation
+
+<CodeGroup>
+```bash Python
+pip install google-adk
+```
+
+```bash Java
+mvn install
+# Or use the samples from github.com/google/adk-samples
+```
+
+```bash From Source
+pip install "google-adk @ git+https://github.com/google/adk-python.git"
+```
+</CodeGroup>
+
+## Quick Start
+
+<Steps>
+  <Step title="Create Your First Agent">
+    ```python agent.py
+    from google.adk.agents import LlmAgent
+    from google.adk.tools import google_search
+    
+    # Define an agent with Google Search capability
+    agent = LlmAgent(
+        name="research_assistant",
+        model="gemini-2.5-flash",
+        description="A helpful research assistant",
+        instruction="""You are a research assistant that helps users find 
+        current information. Always cite your sources and provide URLs.""",
+        tools=[google_search],
+    )
+    
+    # Test locally
+    if __name__ == "__main__":
+        response = agent.query("What are the latest developments in quantum computing?")
+        print(response)
+    ```
+  </Step>
+  
+  <Step title="Test Locally">
+    ```bash
+    export GOOGLE_API_KEY="your-api-key"
+    python agent.py
+    ```
+    
+    The agent will:
+    1. Receive your query
+    2. Use Google Search to find current information
+    3. Synthesize a response with citations
+  </Step>
+  
+  <Step title="Deploy to Agent Engine">
+    ```bash
+    adk deploy agent_engine my_agent
+    ```
+    
+    Or deploy programmatically:
+    
+    ```python
+    from vertexai import agent_engines
+    import vertexai
+    
+    client = vertexai.Client(project="your-project", location="us-central1")
+    
+    adk_app = agent_engines.AdkApp(agent=agent, enable_tracing=True)
+    
+    remote = client.agent_engines.create(
+        agent=adk_app,
+        config=dict(
+            display_name="Research Assistant",
+            staging_bucket="gs://your-bucket",
+        ),
+    )
+    ```
+  </Step>
+</Steps>
+
+## Core Concepts
+
+### LlmAgent
+
+The foundation of ADK is the `LlmAgent` class:
+
+```python
+from google.adk.agents import LlmAgent
+
+agent = LlmAgent(
+    name="agent_name",           # Unique identifier
+    model="gemini-2.5-flash",    # Model to use
+    description="...",           # What the agent does
+    instruction="...",           # System prompt/behavior
+    tools=[...],                 # Available tools
+    agents=[...],                # Sub-agents (for orchestration)
+)
+```
+
+**Parameters explained:**
+
+<CardGroup cols={2}>
+  <Card title="name" icon="tag">
+    Unique identifier for the agent. Used for routing in multi-agent systems.
+  </Card>
+  
+  <Card title="model" icon="brain">
+    Gemini model or Model Garden endpoint:
+    - `gemini-2.5-flash` (fast, cost-effective)
+    - `gemini-2.5-pro` (more capable)
+    - `claude-4-sonnet@20250514` (via Model Garden)
+  </Card>
+  
+  <Card title="description" icon="file-lines">
+    High-level summary of agent's purpose. Used by orchestrators to route requests.
+  </Card>
+  
+  <Card title="instruction" icon="message">
+    Detailed system prompt. Defines agent behavior, personality, and constraints.
+  </Card>
+  
+  <Card title="tools" icon="wrench">
+    List of tools the agent can use:
+    - `google_search`
+    - `code_execution`
+    - Custom functions
+  </Card>
+  
+  <Card title="agents" icon="users">
+    Sub-agents for delegation. Creates hierarchical agent systems.
+  </Card>
+</CardGroup>
+
+### Built-in Tools
+
+<CodeGroup>
+```python Google Search
+from google.adk.tools import google_search
+from google.adk.agents import LlmAgent
+
+agent = LlmAgent(
+    name="search_agent",
+    model="gemini-2.5-flash",
+    instruction="Use Google Search for current information",
+    tools=[google_search],
+)
+
+# Agent can now search the web
+response = agent.query("What are Google's latest AI announcements?")
+```
+
+```python Code Execution
+from google.adk.tools import code_execution
+from google.adk.agents import LlmAgent
+
+agent = LlmAgent(
+    name="data_analyst",
+    model="gemini-2.5-flash",
+    instruction="Use Python for calculations and data analysis",
+    tools=[code_execution],
+)
+
+# Agent can execute Python code
+response = agent.query("Calculate the first 10 Fibonacci numbers")
+```
+
+```python Custom Function
+from google.adk.tools import function_tool
+from google.adk.agents import LlmAgent
+
+@function_tool
+def get_weather(location: str) -> dict:
+    """Get current weather for a location.
+    
+    Args:
+        location: City name or coordinates
+        
+    Returns:
+        Weather data including temperature and conditions
+    """
+    # Your weather API call here
+    return {"temp": 72, "condition": "sunny"}
+
+agent = LlmAgent(
+    name="weather_agent",
+    model="gemini-2.5-flash",
+    instruction="Help users check weather",
+    tools=[get_weather],
+)
+```
+</CodeGroup>
+
+### Sessions and Memory
+
+ADK supports stateful conversations through sessions:
+
+```python
+from google.adk.agents import LlmAgent
+from google.adk.sessions import Session
+
+agent = LlmAgent(
+    name="assistant",
+    model="gemini-2.5-flash",
+    instruction="You are a helpful assistant",
+)
+
+# Create session for conversation history
+session = Session(user_id="user_123")
+
+# First turn
+response1 = agent.query(
+    "My name is Alice and I like Python",
+    session=session,
+)
+
+# Second turn - agent remembers context
+response2 = agent.query(
+    "What's my name and favorite language?",
+    session=session,
+)
+# Response: "Your name is Alice and you like Python"
+```
+
+## Multi-Agent Systems
+
+Build collaborative agent architectures:
+
+### Pattern 1: Orchestrator with Specialists
+
+```python
+from google.adk.agents import LlmAgent
+from google.adk.tools import google_search, code_execution
+
+# Specialized agents
+research_agent = LlmAgent(
+    name="researcher",
+    model="gemini-2.5-flash",
+    description="Finds current information through web search",
+    instruction="Search the web and provide factual, cited information",
+    tools=[google_search],
+)
+
+analysis_agent = LlmAgent(
+    name="analyst",
+    model="gemini-2.5-pro",
+    description="Performs data analysis and calculations",
+    instruction="Analyze data using Python and create visualizations",
+    tools=[code_execution],
+)
+
+# Orchestrator routes to specialists
+root_agent = LlmAgent(
+    name="orchestrator",
+    model="gemini-2.5-flash",
+    description="Coordinates research and analysis tasks",
+    instruction="""You coordinate a team of specialists:
+    - For information gathering, delegate to the researcher
+    - For data analysis, delegate to the analyst
+    Synthesize their responses into a coherent answer.""",
+    agents=[research_agent, analysis_agent],
+)
+
+# User query automatically routed
+response = root_agent.query(
+    "Find recent AI funding data and calculate the growth trend"
+)
+# Orchestrator will:
+# 1. Ask researcher to find funding data
+# 2. Pass data to analyst for trend analysis
+# 3. Synthesize final response
+```
+
+### Pattern 2: Sequential Pipeline
+
+```python
+class PipelineAgent:
+    """Chain of agents processing sequentially."""
+    
+    def __init__(self):
+        self.planner = LlmAgent(
+            name="planner",
+            model="gemini-2.5-flash",
+            instruction="Break down complex tasks into steps",
+        )
+        
+        self.executor = LlmAgent(
+            name="executor",
+            model="gemini-2.5-flash",
+            instruction="Execute task steps using available tools",
+            tools=[google_search, code_execution],
+        )
+        
+        self.reviewer = LlmAgent(
+            name="reviewer",
+            model="gemini-2.5-pro",
+            instruction="Review results and suggest improvements",
+        )
+    
+    def process(self, task: str) -> str:
+        # Step 1: Plan
+        plan = self.planner.query(f"Create a plan for: {task}")
+        
+        # Step 2: Execute
+        result = self.executor.query(f"Execute this plan: {plan}")
+        
+        # Step 3: Review
+        final = self.reviewer.query(
+            f"Review this result and improve if needed: {result}"
+        )
+        
+        return final
+
+pipeline = PipelineAgent()
+response = pipeline.process("Research quantum computing and create a summary")
+```
+
+### Pattern 3: Semantic Router
+
+```python
+from google.adk.agents import LlmAgent
+
+# Domain-specific experts
+sales_agent = LlmAgent(
+    name="sales_expert",
+    model="gemini-2.5-flash",
+    description="Handles sales and revenue questions",
+    instruction="You are a sales expert with access to sales data",
+)
+
+support_agent = LlmAgent(
+    name="support_expert",
+    model="gemini-2.5-flash",
+    description="Handles customer support questions",
+    instruction="You are a customer support expert",
+)
+
+technical_agent = LlmAgent(
+    name="technical_expert",
+    model="gemini-2.5-pro",
+    description="Handles technical and engineering questions",
+    instruction="You are a technical expert",
+)
+
+# Router analyzes intent and delegates
+router = LlmAgent(
+    name="router",
+    model="gemini-2.5-flash",
+    description="Routes questions to appropriate experts",
+    instruction="""Analyze the user's question and route to:
+    - sales_expert for sales/revenue questions
+    - support_expert for customer issues
+    - technical_expert for technical questions
+    Choose the most appropriate expert based on intent.""",
+    agents=[sales_agent, support_agent, technical_agent],
+)
+
+# Automatic routing based on query
+response = router.query("How do I fix a deployment error?")
+# Routes to technical_agent
+
+response = router.query("What were Q4 sales numbers?")
+# Routes to sales_agent
+```
+
+## Advanced Features
+
+### Streaming Responses
+
+```python
+agent = LlmAgent(
+    name="assistant",
+    model="gemini-2.5-flash",
+    instruction="Provide detailed responses",
+)
+
+# Stream tokens as they're generated
+for chunk in agent.stream_query("Explain quantum computing"):
+    print(chunk, end="", flush=True)
+```
+
+### Custom Model Configuration
+
+```python
+from google.adk.models import GenerationConfig
+
+agent = LlmAgent(
+    name="creative_writer",
+    model="gemini-2.5-pro",
+    instruction="Write creative content",
+    generation_config=GenerationConfig(
+        temperature=0.9,        # More creative
+        top_p=0.95,
+        top_k=40,
+        max_output_tokens=2048,
+    ),
+)
+```
+
+### Error Handling and Retries
+
+```python
+from google.adk.agents import LlmAgent
+from google.adk.errors import AgentError
+
+agent = LlmAgent(
+    name="robust_agent",
+    model="gemini-2.5-flash",
+    instruction="Handle errors gracefully",
+    max_retries=3,           # Retry on failures
+    timeout=30,              # 30 second timeout
+)
+
+try:
+    response = agent.query("Complex query")
+except AgentError as e:
+    print(f"Agent error: {e}")
+    # Fallback logic
+```
+
+## Integration with Agent Engine
+
+### AdkApp Wrapper
+
+To deploy ADK agents to Agent Engine, wrap them in `AdkApp`:
+
+```python
+from vertexai import agent_engines
+
+# Your ADK agent
+agent = LlmAgent(
+    name="my_agent",
+    model="gemini-2.5-flash",
+    instruction="...",
+    tools=[...],
+)
+
+# Wrap for deployment
+adk_app = agent_engines.AdkApp(
+    agent=agent,
+    enable_tracing=True,              # Cloud Trace integration
+    session_service="VertexAiSessionService",  # Managed sessions
+)
+
+# Deploy
+import vertexai
+client = vertexai.Client(project=PROJECT_ID, location=LOCATION)
+
+remote = client.agent_engines.create(
+    agent=adk_app,
+    config=dict(
+        display_name="My Agent",
+        description="Production agent",
+        staging_bucket="gs://my-bucket",
+        requirements=["google-cloud-aiplatform[adk,agent_engines]"],
+    ),
+)
+```
+
+### Memory Bank Integration
+
+Combine ADK agents with Memory Bank:
+
+```python
+from google.adk.agents import LlmAgent
+from google.adk.tools import memory_bank
+
+agent = LlmAgent(
+    name="personal_assistant",
+    model="gemini-2.5-flash",
+    instruction="""You are a personal assistant with long-term memory.
+    Always check memory for user preferences and past context.""",
+    tools=[memory_bank],
+)
+
+# Agent automatically uses Memory Bank
+response = agent.query(
+    "What did I say I wanted for dinner last week?",
+    user_id="user_123",
+)
+```
+
+## Real-World Example: Always-On Memory Agent
+
+Complete implementation of a persistent memory agent:
+
+<CodeGroup>
+```python agent.py
+from google.adk.agents import LlmAgent
+from google.adk.tools import function_tool
+import sqlite3
+import asyncio
+
+# Custom memory tools
+@function_tool
+def store_memory(text: str, source: str = "user") -> dict:
+    """Store information in persistent memory.
+    
+    Args:
+        text: Information to remember
+        source: Source of information
+    """
+    conn = sqlite3.connect("memory.db")
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO memories (text, source, timestamp) VALUES (?, ?, datetime('now'))",
+        (text, source),
+    )
+    conn.commit()
+    conn.close()
+    return {"status": "stored", "text": text}
+
+@function_tool
+def search_memory(query: str, limit: int = 5) -> list:
+    """Search stored memories.
+    
+    Args:
+        query: What to search for
+        limit: Max results to return
+    """
+    conn = sqlite3.connect("memory.db")
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT text, timestamp FROM memories WHERE text LIKE ? ORDER BY timestamp DESC LIMIT ?",
+        (f"%{query}%", limit),
+    )
+    results = cursor.fetchall()
+    conn.close()
+    return [{"text": r[0], "timestamp": r[1]} for r in results]
+
+# Ingest agent
+ingest_agent = LlmAgent(
+    name="ingest",
+    model="gemini-3.1-flash-lite",
+    instruction="Extract key information and store in memory",
+    tools=[store_memory],
+)
+
+# Query agent
+query_agent = LlmAgent(
+    name="query",
+    model="gemini-2.5-flash",
+    instruction="Search memory and synthesize answers with citations",
+    tools=[search_memory],
+)
+
+# Consolidation agent
+consolidate_agent = LlmAgent(
+    name="consolidate",
+    model="gemini-3.1-flash-lite",
+    instruction="Find connections between memories and generate insights",
+    tools=[search_memory, store_memory],
+)
+
+# Main orchestrator
+root_agent = LlmAgent(
+    name="memory_agent",
+    model="gemini-2.5-flash",
+    instruction="""You coordinate a persistent memory system:
+    - Use ingest to store new information
+    - Use query to answer questions
+    - Use consolidate to find connections""",
+    agents=[ingest_agent, query_agent, consolidate_agent],
+)
+
+# Background consolidation
+async def consolidate_periodically():
+    while True:
+        await asyncio.sleep(1800)  # Every 30 minutes
+        await consolidate_agent.query("Review recent memories and consolidate")
+
+if __name__ == "__main__":
+    # Start consolidation task
+    asyncio.create_task(consolidate_periodically())
+    
+    # Serve agent
+    from aiohttp import web
+    
+    async def handle_ingest(request):
+        data = await request.json()
+        response = await ingest_agent.query(data["text"])
+        return web.json_response({"result": response})
+    
+    async def handle_query(request):
+        query = request.query.get("q")
+        response = await query_agent.query(query)
+        return web.json_response({"result": response})
+    
+    app = web.Application()
+    app.router.add_post("/ingest", handle_ingest)
+    app.router.add_get("/query", handle_query)
+    
+    web.run_app(app, port=8888)
+```
+
+```bash Usage
+# Ingest information
+curl -X POST http://localhost:8888/ingest \
+  -H "Content-Type: application/json" \
+  -d '{"text": "AI agents are the future of software"}'
+
+# Query memory
+curl "http://localhost:8888/query?q=what+do+you+know+about+AI+agents"
+```
+</CodeGroup>
+
+## Best Practices
+
+<Steps>
+  <Step title="Use Specific Instructions">
+    Clear, detailed instructions lead to better agent behavior:
+    
+    **Good:**
+    ```python
+    instruction="""You are a sales analyst. When answering questions:
+    1. Always cite specific data sources
+    2. Provide numbers and percentages
+    3. Compare to previous periods when relevant
+    4. Flag any data quality issues"""
+    ```
+    
+    **Bad:**
+    ```python
+    instruction="You are a helpful assistant"
+    ```
+  </Step>
+  
+  <Step title="Choose the Right Model">
+    - **gemini-3.1-flash-lite**: Fast, cheap background tasks
+    - **gemini-2.5-flash**: General purpose, good balance
+    - **gemini-2.5-pro**: Complex reasoning, critical tasks
+    - **claude-4-sonnet**: Alternative perspective, writing tasks
+  </Step>
+  
+  <Step title="Design Tools Carefully">
+    Make tool functions:
+    - **Focused**: One clear purpose
+    - **Documented**: Clear docstrings for the LLM
+    - **Validated**: Check inputs and handle errors
+    - **Typed**: Use type hints for better LLM understanding
+  </Step>
+  
+  <Step title="Test Locally First">
+    Always test agents locally before deploying:
+    
+    ```python
+    if __name__ == "__main__":
+        test_queries = [
+            "What is quantum computing?",
+            "Calculate compound interest",
+            "Find recent AI news",
+        ]
+        
+        for query in test_queries:
+            print(f"Q: {query}")
+            response = agent.query(query)
+            print(f"A: {response}\n")
+    ```
+  </Step>
+  
+  <Step title="Monitor Token Usage">
+    Track token consumption to optimize costs:
+    
+    ```python
+    response = agent.query("query", return_metadata=True)
+    print(f"Input tokens: {response.metadata.input_tokens}")
+    print(f"Output tokens: {response.metadata.output_tokens}")
+    ```
+  </Step>
+</Steps>
+
+## Sample Agents
+
+Explore pre-built examples:
+
+<CardGroup cols={2}>
+  <Card title="Python Samples" href="https://github.com/google/adk-samples/tree/main/python" icon="python">
+    - Customer support bot
+    - Data analysis agent
+    - Research assistant
+    - Multi-agent orchestration
+  </Card>
+  
+  <Card title="Java Samples" href="https://github.com/google/adk-samples/tree/main/java" icon="java">
+    - Enterprise integrations
+    - Function calling patterns
+    - Session management
+    - Error handling
+  </Card>
+</CardGroup>
+
+## Resources
+
+<CardGroup cols={2}>
+  <Card title="ADK Documentation" href="https://google.github.io/adk-docs/" icon="book">
+    Complete API reference and guides
+  </Card>
+  
+  <Card title="CLI Reference" href="https://google.github.io/adk-docs/cli/" icon="terminal">
+    Command-line tool documentation
+  </Card>
+  
+  <Card title="GitHub Repository" href="https://github.com/google/adk-python" icon="github">
+    Source code and issue tracking
+  </Card>
+  
+  <Card title="Sample Repository" href="https://github.com/google/adk-samples" icon="code">
+    Working examples in Python and Java
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Deploy to Agent Engine" href="/agents/agent-engine" icon="cloud">
+    Take your ADK agent to production
+  </Card>
+  
+  <Card title="Add Memory" href="/agents/agent-engine#memory-bank-integration" icon="database">
+    Integrate with Memory Bank for persistent context
+  </Card>
+  
+  <Card title="Multi-Agent Systems" href="#multi-agent-systems" icon="network-wired">
+    Build collaborative agent architectures
+  </Card>
+  
+  <Card title="Example: Always-On Agent" href="https://github.com/GoogleCloudPlatform/generative-ai/tree/main/gemini/agents/always-on-memory-agent" icon="brain">
+    Complete production-ready example
+  </Card>
+</CardGroup>

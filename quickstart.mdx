@@ -1,80 +1,409 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Get started with Gemini in minutes - generate text, process images, and explore multimodal AI capabilities"
 ---
 
-## Get started in three steps
-
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+This quickstart guide will get you up and running with Gemini on Vertex AI. You'll learn to generate text and build a multimodal application that processes both text and images.
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+Before starting, make sure you've completed the [Environment Setup](/setup) guide.
 </Note>
+
+## Your First Gemini Request
+
+Let's start with the simplest possible example - generating text from a prompt.
+
+<Steps>
+  <Step title="Import and Initialize">
+    Create a new Python file or notebook and set up the client:
+
+    ```python
+    from google import genai
+    from google.genai import types
+
+    # Initialize the client
+    PROJECT_ID = "your-project-id"  # Replace with your project ID
+    LOCATION = "us-central1"
+
+    client = genai.Client(
+        vertexai=True,
+        project=PROJECT_ID,
+        location=LOCATION
+    )
+    ```
+
+    <Tip>
+    If you're running on Google Colab, add authentication first:
+    ```python
+    from google.colab import auth
+    auth.authenticate_user()
+    ```
+    </Tip>
+  </Step>
+
+  <Step title="Generate Your First Response">
+    Send a prompt to Gemini and get a response:
+
+    ```python
+    response = client.models.generate_content(
+        model="gemini-2.0-flash-exp",
+        contents="Explain how AI works in simple terms."
+    )
+
+    print(response.text)
+    ```
+
+    That's it! You should see a clear, friendly explanation of AI concepts.
+  </Step>
+</Steps>
+
+## Text Generation Examples
+
+Here are practical examples of what you can do with text generation:
+
+### Simple Q&A
+
+```python
+response = client.models.generate_content(
+    model="gemini-2.0-flash-exp",
+    contents="What are the key differences between Python and JavaScript?"
+)
+
+print(response.text)
+```
+
+### Creative Writing
+
+```python
+prompt = """
+Write a short story about a robot learning to paint.
+Make it heartwarming and under 200 words.
+"""
+
+response = client.models.generate_content(
+    model="gemini-2.0-flash-exp",
+    contents=prompt
+)
+
+print(response.text)
+```
+
+### Streaming Responses
+
+For longer outputs, stream the response to see results as they're generated:
+
+```python
+prompt = "Explain quantum computing in detail."
+
+for chunk in client.models.generate_content_stream(
+    model="gemini-2.0-flash-exp",
+    contents=prompt
+):
+    print(chunk.text, end="")
+```
+
+## Multimodal Example: Vision
+
+Gemini's real power comes from its multimodal capabilities. Let's analyze an image:
+
+<CodeGroup>
+```python From URL
+response = client.models.generate_content(
+    model="gemini-2.0-flash-exp",
+    contents=[
+        types.Part.from_uri(
+            file_uri="gs://cloud-samples-data/generative-ai/image/meal.png",
+            mime_type="image/png"
+        ),
+        "Describe this image and suggest a recipe."
+    ]
+)
+
+print(response.text)
+```
+
+```python From Local File
+import pathlib
+
+# Read local image file
+image_path = pathlib.Path("path/to/your/image.jpg")
+image_data = image_path.read_bytes()
+
+response = client.models.generate_content(
+    model="gemini-2.0-flash-exp",
+    contents=[
+        types.Part.from_bytes(
+            data=image_data,
+            mime_type="image/jpeg"
+        ),
+        "What objects do you see in this image?"
+    ]
+)
+
+print(response.text)
+```
+</CodeGroup>
+
+### Example: Product Photo Analysis
+
+Here's a complete example that analyzes a product photo:
+
+```python
+from google import genai
+from google.genai import types
+
+# Initialize client
+client = genai.Client(
+    vertexai=True,
+    project="your-project-id",
+    location="us-central1"
+)
+
+# Analyze a product image
+response = client.models.generate_content(
+    model="gemini-2.0-flash-exp",
+    contents=[
+        types.Part.from_uri(
+            file_uri="gs://cloud-samples-data/generative-ai/image/a-man-and-a-dog.png",
+            mime_type="image/png"
+        ),
+        """
+        Analyze this image and provide:
+        1. A detailed description
+        2. The mood or atmosphere
+        3. Potential use cases for marketing
+        """
+    ]
+)
+
+print(response.text)
+```
+
+## Multi-Turn Conversations
+
+Build conversational applications with chat history:
+
+```python
+# Start a chat session
+chat = client.chats.create(
+    model="gemini-2.0-flash-exp"
+)
+
+# First message
+response = chat.send_message(
+    "I'm building a web app. Should I use React or Vue?"
+)
+print("Gemini:", response.text)
+
+# Follow-up question
+response = chat.send_message(
+    "What about performance differences?"
+)
+print("Gemini:", response.text)
+
+# The model remembers the context
+response = chat.send_message(
+    "Can you show me a simple component example?"
+)
+print("Gemini:", response.text)
+```
+
+## Advanced Configuration
+
+### Control Output Quality
+
+Customize the model's behavior with configuration parameters:
+
+```python
+response = client.models.generate_content(
+    model="gemini-2.0-flash-exp",
+    contents="Write a product description for a smart watch.",
+    config=types.GenerateContentConfig(
+        temperature=0.9,          # Higher = more creative (0.0-2.0)
+        top_p=0.95,              # Nucleus sampling
+        max_output_tokens=1024,   # Maximum length
+    )
+)
+
+print(response.text)
+```
+
+### System Instructions
+
+Set consistent behavior across all prompts:
+
+```python
+system_instruction = """
+You are a helpful coding assistant specializing in Python.
+Always provide working code examples with comments.
+Use best practices and explain your reasoning.
+"""
+
+response = client.models.generate_content(
+    model="gemini-2.0-flash-exp",
+    contents="How do I read a CSV file?",
+    config=types.GenerateContentConfig(
+        system_instruction=system_instruction
+    )
+)
+
+print(response.text)
+```
+
+### Safety Settings
+
+Control content filtering for your application:
+
+```python
+safety_settings = [
+    types.SafetySetting(
+        category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+        threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE
+    ),
+    types.SafetySetting(
+        category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+        threshold=types.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE
+    )
+]
+
+response = client.models.generate_content(
+    model="gemini-2.0-flash-exp",
+    contents="Your prompt here",
+    config=types.GenerateContentConfig(
+        safety_settings=safety_settings
+    )
+)
+```
+
+## Complete Multimodal Example
+
+Here's a production-ready example combining multiple features:
+
+```python
+from google import genai
+from google.genai import types
+import os
+
+class GeminiAnalyzer:
+    def __init__(self, project_id: str, location: str = "us-central1"):
+        self.client = genai.Client(
+            vertexai=True,
+            project=project_id,
+            location=location
+        )
+        self.model = "gemini-2.0-flash-exp"
+    
+    def analyze_image(self, image_uri: str, question: str) -> str:
+        """Analyze an image with a custom question."""
+        response = self.client.models.generate_content(
+            model=self.model,
+            contents=[
+                types.Part.from_uri(
+                    file_uri=image_uri,
+                    mime_type="image/jpeg"
+                ),
+                question
+            ],
+            config=types.GenerateContentConfig(
+                temperature=0.4,
+                max_output_tokens=2048
+            )
+        )
+        return response.text
+    
+    def chat(self, messages: list[str]) -> list[str]:
+        """Have a multi-turn conversation."""
+        chat = self.client.chats.create(model=self.model)
+        responses = []
+        
+        for message in messages:
+            response = chat.send_message(message)
+            responses.append(response.text)
+        
+        return responses
+
+# Usage
+analyzer = GeminiAnalyzer(project_id="your-project-id")
+
+# Analyze an image
+result = analyzer.analyze_image(
+    image_uri="gs://cloud-samples-data/generative-ai/image/meal.png",
+    question="What ingredients would I need to recreate this dish?"
+)
+print(result)
+
+# Have a conversation
+responses = analyzer.chat([
+    "What's the best way to learn Python?",
+    "How long would that take?",
+    "What resources do you recommend?"
+])
+for i, response in enumerate(responses, 1):
+    print(f"Response {i}: {response}\n")
+```
+
+## Error Handling
+
+Always implement proper error handling in production:
+
+```python
+from google.api_core import exceptions
+
+try:
+    response = client.models.generate_content(
+        model="gemini-2.0-flash-exp",
+        contents="Your prompt here"
+    )
+    print(response.text)
+    
+except exceptions.ResourceExhausted:
+    print("Quota exceeded. Please try again later.")
+    
+except exceptions.InvalidArgument as e:
+    print(f"Invalid request: {e}")
+    
+except exceptions.PermissionDenied:
+    print("Permission denied. Check your authentication.")
+    
+except Exception as e:
+    print(f"Unexpected error: {e}")
+```
+
+## What You've Learned
+
+You now know how to:
+
+- Generate text with Gemini models
+- Stream responses for better UX
+- Process images and build multimodal applications
+- Maintain conversation context
+- Configure model parameters for quality and safety
+- Handle errors gracefully
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Function Calling" icon="code" href="/gemini/function-calling">
+    Connect Gemini to external tools and APIs
+  </Card>
+  <Card title="Multimodal Guide" icon="images" href="/gemini/multimodal">
+    Work with video, audio, and PDFs
+  </Card>
+  <Card title="Prompt Engineering" icon="wand-magic-sparkles" href="/gemini/prompting">
+    Write better prompts for better results
+  </Card>
+  <Card title="Sample Applications" icon="rocket" href="/use-cases/overview">
+    Explore production-ready examples
+  </Card>
+</CardGroup>
+
+## Additional Resources
+
+- [Gemini Model Reference](https://cloud.google.com/vertex-ai/generative-ai/docs/model-reference/gemini)
+- [Google Gen AI SDK Documentation](https://github.com/googleapis/python-genai)
+- [Vertex AI Pricing](https://cloud.google.com/vertex-ai/generative-ai/pricing)
+- [Community Samples on GitHub](https://github.com/GoogleCloudPlatform/generative-ai)
+
+<Warning>
+This repository contains sample code for demonstrative purposes. For production applications, refer to the official [Vertex AI documentation](https://cloud.google.com/vertex-ai/docs).
+</Warning>

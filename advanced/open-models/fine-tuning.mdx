@@ -1,0 +1,510 @@
+---
+title: Fine-Tuning Open Source Models
+description: Customize open-source models on Vertex AI with supervised fine-tuning and LoRA adapters
+---
+
+## Overview
+
+Fine-tuning allows you to customize pre-trained open-source models for your specific tasks and domain. Vertex AI provides managed fine-tuning services that handle infrastructure provisioning, distributed training, and hyperparameter optimization.
+
+## Fine-Tuning Methods
+
+Vertex AI supports multiple fine-tuning approaches:
+
+<Tabs>
+  <Tab title="Full Fine-Tuning">
+    Update all model parameters for maximum customization:
+    
+    - **Best for**: Domain-specific tasks requiring significant adaptation
+    - **Resource requirements**: High (requires powerful GPUs)
+    - **Training time**: Hours to days
+    - **Model quality**: Highest potential quality
+  </Tab>
+  <Tab title="LoRA (Low-Rank Adaptation)">
+    Train small adapter layers while freezing the base model:
+    
+    - **Best for**: Task adaptation with limited data
+    - **Resource requirements**: Moderate
+    - **Training time**: Minutes to hours
+    - **Model quality**: Good, with much lower cost
+  </Tab>
+  <Tab title="QLoRA">
+    LoRA combined with 4-bit quantization:
+    
+    - **Best for**: Fine-tuning large models on limited hardware
+    - **Resource requirements**: Low
+    - **Training time**: Fast
+    - **Model quality**: Slightly lower than LoRA
+  </Tab>
+</Tabs>
+
+## Supervised Fine-Tuning (SFT)
+
+### Preparing Your Dataset
+
+Format your training data in JSONL (JSON Lines) format:
+
+<CodeGroup>
+```json Chat Format
+{"messages": [{"role": "user", "content": "What is the capital of France?"}, {"role": "assistant", "content": "The capital of France is Paris."}]}
+{"messages": [{"role": "user", "content": "Explain photosynthesis"}, {"role": "assistant", "content": "Photosynthesis is the process by which plants convert light energy into chemical energy..."}]}
+```
+
+```json Instruction Format
+{"prompt": "Translate to French: Hello, how are you?", "completion": "Bonjour, comment allez-vous ?"}
+{"prompt": "Write a Python function to calculate fibonacci numbers", "completion": "def fibonacci(n):\n    if n <= 1:\n        return n\n    return fibonacci(n-1) + fibonacci(n-2)"}
+```
+</CodeGroup>
+
+### Dataset Requirements
+
+<Note>
+- **Training set**: At least 100 examples (1,000+ recommended)
+- **Validation set**: Less than 25% of training data and under 5,000 examples
+- **Format**: JSONL with consistent schema
+- **Storage**: Upload to Google Cloud Storage
+</Note>
+
+### Upload Data to Cloud Storage
+
+```python
+import os
+from google.cloud import storage
+
+# Upload to GCS
+BUCKET_URI = "gs://your-bucket-name"
+train_file_uri = f"{BUCKET_URI}/datasets/train.jsonl"
+validation_file_uri = f"{BUCKET_URI}/datasets/validation.jsonl"
+
+# Using gcloud CLI
+!gcloud storage cp train.jsonl {train_file_uri}
+!gcloud storage cp validation.jsonl {validation_file_uri}
+```
+
+## Full Fine-Tuning Example
+
+### Setup and Configuration
+
+<Steps>
+  <Step title="Install Dependencies">
+    ```bash
+    pip install --upgrade google-cloud-aiplatform>=1.129.0
+    ```
+  </Step>
+  <Step title="Initialize Vertex AI">
+    ```python
+    import vertexai
+    from vertexai.tuning import SourceModel, sft
+    
+    PROJECT_ID = "your-project-id"
+    LOCATION = "us-central1"
+    BUCKET_URI = "gs://your-bucket"
+    
+    vertexai.init(
+        project=PROJECT_ID,
+        location=LOCATION,
+        staging_bucket=BUCKET_URI
+    )
+    ```
+  </Step>
+  <Step title="Configure Fine-Tuning Job">
+    ```python
+    from pydantic import BaseModel, Field
+    
+    class TuningConfig(BaseModel):
+        base_model: str = Field(
+            default="meta/llama3_1@llama-3.1-8b",
+            description="Base model to fine-tune"
+        )
+        tuning_mode: str = Field(
+            default="FULL",
+            description="FULL or LORA"
+        )
+        epochs: int = Field(
+            default=3,
+            description="Number of training epochs"
+        )
+        learning_rate: float = Field(
+            default=2e-5,
+            description="Learning rate"
+        )
+    
+    config = TuningConfig()
+    ```
+  </Step>
+  <Step title="Launch Training">
+    ```python
+    import uuid
+    
+    output_uri = f"{BUCKET_URI}/tuning-output/{uuid.uuid4()}"
+    
+    source_model = SourceModel(base_model=config.base_model)
+    
+    sft_tuning_job = sft.train(
+        source_model=source_model,
+        tuning_mode=config.tuning_mode,
+        epochs=config.epochs,
+        learning_rate=config.learning_rate,
+        train_dataset=train_file_uri,
+        validation_dataset=validation_file_uri,
+        output_uri=output_uri
+    )
+    ```
+  </Step>
+  <Step title="Monitor Progress">
+    ```python
+    import time
+    from google.cloud.aiplatform_v1beta1.types import JobState
+    
+    print("Training started. Monitoring progress...")
+    
+    while sft_tuning_job.state not in [
+        JobState.JOB_STATE_CANCELLED,
+        JobState.JOB_STATE_FAILED,
+        JobState.JOB_STATE_SUCCEEDED,
+    ]:
+        time.sleep(600)  # Check every 10 minutes
+        sft_tuning_job.refresh()
+        print(f"Status: {sft_tuning_job.state.name}")
+    
+    print(f"Training completed: {sft_tuning_job.state.name}")
+    ```
+  </Step>
+</Steps>
+
+## LoRA Fine-Tuning
+
+LoRA is more efficient for most use cases:
+
+```python
+# Configure LoRA fine-tuning
+sft_tuning_job = sft.train(
+    source_model=SourceModel(base_model="meta/llama3_1@llama-3.1-8b"),
+    tuning_mode="LORA",  # Use LoRA instead of FULL
+    epochs=3,
+    learning_rate=3e-4,  # Higher learning rate for LoRA
+    train_dataset=train_file_uri,
+    validation_dataset=validation_file_uri,
+    output_uri=output_uri,
+    # LoRA-specific parameters
+    lora_rank=8,  # Rank of LoRA matrices
+    lora_alpha=16,  # Scaling factor
+    lora_dropout=0.05  # Dropout rate
+)
+```
+
+## Advanced Fine-Tuning with TRL
+
+Use Hugging Face's TRL (Transformer Reinforcement Learning) library for advanced techniques:
+
+### Using Custom Training Scripts
+
+```python
+from google.cloud import aiplatform
+
+# Define custom training job
+job = aiplatform.CustomTrainingJob(
+    display_name="gemma-trl-finetuning",
+    container_uri="us-docker.pkg.dev/vertex-ai/training/pytorch-gpu.2-1.py310:latest",
+    requirements=["trl", "transformers", "datasets", "peft", "bitsandbytes"]
+)
+
+# Run training
+model = job.run(
+    replica_count=1,
+    machine_type="n1-standard-16",
+    accelerator_type="NVIDIA_TESLA_V100",
+    accelerator_count=2,
+    args=[
+        "--model_name", "google/gemma-2b",
+        "--dataset", train_file_uri,
+        "--output_dir", output_uri,
+        "--num_epochs", "3",
+        "--learning_rate", "2e-5"
+    ]
+)
+```
+
+## Real-World Example: MetaMath Fine-Tuning
+
+Fine-tune a model for mathematical reasoning:
+
+<Steps>
+  <Step title="Load MetaMathQA Dataset">
+    ```python
+    from datasets import load_dataset
+    
+    # Load dataset from Hugging Face
+    dataset = load_dataset("meta-math/MetaMathQA")["train"]
+    
+    # Split into train/validation
+    split_dataset = dataset.train_test_split(test_size=0.2, seed=42)
+    train_split = split_dataset["train"]
+    validation_split = split_dataset["test"]
+    
+    # Limit validation to 5000 examples
+    if len(validation_split) > 5000:
+        validation_split = validation_split.shuffle(seed=42).select(range(4999))
+    ```
+  </Step>
+  <Step title="Format Data">
+    ```python
+    METAMATH_TEMPLATE = """Below is an instruction that describes a task. Write a response that appropriately completes the request.
+    
+    ### Instruction:
+    {instruction}
+    
+    ### Response:"""
+    
+    def format_for_tuning(example):
+        query = example["query"]
+        response = example["response"]
+        instruction = METAMATH_TEMPLATE.format(instruction=query)
+        
+        return {
+            "messages": [
+                {"role": "user", "content": instruction},
+                {"role": "assistant", "content": f" {response}"}
+            ]
+        }
+    
+    train_formatted = train_split.map(format_for_tuning, remove_columns=train_split.column_names)
+    val_formatted = validation_split.map(format_for_tuning, remove_columns=validation_split.column_names)
+    ```
+  </Step>
+  <Step title="Save and Upload">
+    ```python
+    import json
+    
+    def save_to_jsonl(dataset, output_path):
+        with open(output_path, "w") as f:
+            for example in dataset:
+                json.dump(example, f)
+                f.write("\n")
+    
+    save_to_jsonl(train_formatted, "metamath_train.jsonl")
+    save_to_jsonl(val_formatted, "metamath_val.jsonl")
+    
+    # Upload to GCS
+    !gcloud storage cp metamath_train.jsonl {BUCKET_URI}/datasets/
+    !gcloud storage cp metamath_val.jsonl {BUCKET_URI}/datasets/
+    ```
+  </Step>
+  <Step title="Fine-Tune Model">
+    ```python
+    sft_tuning_job = sft.train(
+        source_model=SourceModel(base_model="meta/llama3_1@llama-3.1-8b"),
+        tuning_mode="FULL",
+        epochs=3,
+        learning_rate=2e-5,
+        train_dataset=f"{BUCKET_URI}/datasets/metamath_train.jsonl",
+        validation_dataset=f"{BUCKET_URI}/datasets/metamath_val.jsonl",
+        output_uri=f"{BUCKET_URI}/metamath-output"
+    )
+    ```
+  </Step>
+</Steps>
+
+## Deploy Fine-Tuned Models
+
+### Deploy from Training Output
+
+```python
+from vertexai.preview import model_garden
+import os
+
+# Model artifacts location
+model_artifacts_uri = os.path.join(
+    output_uri,
+    "postprocess/node-0/checkpoints/final"
+)
+
+# Create custom model
+tuned_model = model_garden.CustomModel(gcs_uri=model_artifacts_uri)
+
+# Deploy to endpoint
+endpoint = tuned_model.deploy(
+    machine_type="g2-standard-12",
+    accelerator_type="NVIDIA_L4",
+    accelerator_count=1,
+    min_replica_count=1,
+    max_replica_count=3
+)
+```
+
+### Test the Fine-Tuned Model
+
+```python
+# Make prediction
+prompt_template = "Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n### Instruction:\n{instruction}\n\n### Response: Let's think step by step."
+
+instruction = "James buys 5 packs of beef that are 4 pounds each. The price of beef is $5.50 per pound. How much did he pay?"
+
+prediction = endpoint.predict(
+    instances=[{
+        "prompt": prompt_template.format(instruction=instruction),
+        "max_tokens": 250,
+        "temperature": 0.2,
+        "top_p": 1.0,
+        "top_k": 1
+    }]
+)
+
+print(prediction.predictions[0])
+```
+
+## Serving Multiple LoRA Adapters
+
+Serve multiple LoRA adapters with a single base model:
+
+```python
+from huggingface_hub import snapshot_download
+
+# Download LoRA adapters
+sql_adapter = snapshot_download(
+    repo_id="google-cloud-partnership/gemma-2-2b-it-lora-sql",
+    local_dir="./adapters/sql"
+)
+
+code_adapter = snapshot_download(
+    repo_id="google-cloud-partnership/gemma-2-2b-it-lora-magicoder",
+    local_dir="./adapters/code"
+)
+
+# Upload to GCS
+!gcloud storage cp -r ./adapters/* {BUCKET_URI}/lora-adapters/
+
+# Deploy with vLLM supporting multiple adapters
+# See serving documentation for detailed configuration
+```
+
+## Hyperparameter Tuning
+
+Optimize training hyperparameters:
+
+<Tabs>
+  <Tab title="Learning Rate">
+    ```python
+    # Full fine-tuning: 1e-5 to 5e-5
+    # LoRA: 1e-4 to 5e-4
+    learning_rates = [1e-5, 2e-5, 5e-5]
+    
+    for lr in learning_rates:
+        job = sft.train(
+            source_model=source_model,
+            learning_rate=lr,
+            # ... other parameters
+        )
+    ```
+  </Tab>
+  <Tab title="Batch Size">
+    ```python
+    # Larger batch sizes for stability
+    # Smaller for memory constraints
+    batch_sizes = [8, 16, 32]
+    
+    for bs in batch_sizes:
+        job = sft.train(
+            source_model=source_model,
+            per_device_train_batch_size=bs,
+            # ... other parameters
+        )
+    ```
+  </Tab>
+  <Tab title="LoRA Rank">
+    ```python
+    # Higher rank = more parameters = better quality
+    # Lower rank = faster training = lower cost
+    lora_ranks = [4, 8, 16, 32]
+    
+    for rank in lora_ranks:
+        job = sft.train(
+            source_model=source_model,
+            tuning_mode="LORA",
+            lora_rank=rank,
+            lora_alpha=rank * 2,  # Common practice
+            # ... other parameters
+        )
+    ```
+  </Tab>
+</Tabs>
+
+## Evaluation
+
+Evaluate your fine-tuned model:
+
+```python
+from vertexai.preview.generative_models import GenerativeModel
+import pandas as pd
+
+# Load test dataset
+test_data = pd.read_json("test.jsonl", lines=True)
+
+# Evaluate
+results = []
+for idx, row in test_data.iterrows():
+    prediction = endpoint.predict(
+        instances=[{"prompt": row["prompt"], "max_tokens": 200}]
+    )
+    results.append({
+        "prompt": row["prompt"],
+        "expected": row["completion"],
+        "predicted": prediction.predictions[0]
+    })
+
+# Calculate metrics
+results_df = pd.DataFrame(results)
+results_df.to_csv("evaluation_results.csv", index=False)
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Data Quality" icon="database">
+    Use high-quality, diverse training data (1,000+ examples recommended)
+  </Card>
+  <Card title="Start with LoRA" icon="bolt">
+    Begin with LoRA fine-tuning before attempting full fine-tuning
+  </Card>
+  <Card title="Monitor Training" icon="chart-line">
+    Use validation loss to detect overfitting and adjust epochs
+  </Card>
+  <Card title="Version Control" icon="code-branch">
+    Track experiments with clear naming and metadata
+  </Card>
+  <Card title="Cost Management" icon="dollar-sign">
+    Use spot VMs for training jobs to reduce costs
+  </Card>
+  <Card title="Evaluation First" icon="clipboard-check">
+    Always evaluate before deploying to production
+  </Card>
+</CardGroup>
+
+## Cost Optimization
+
+```python
+# Use spot instances for training
+job = sft.train(
+    source_model=source_model,
+    # ... other parameters
+    enable_spot_vm=True,  # Up to 80% cost savings
+    spot_vm_retention_time=3600  # 1 hour retention
+)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Deploy Models" icon="rocket" href="/advanced/open-models/serving">
+    Learn about optimized serving with vLLM and TGI
+  </Card>
+  <Card title="Example Notebooks" icon="book" href="https://github.com/GoogleCloudPlatform/generative-ai/tree/main/open-models/fine-tuning">
+    Explore fine-tuning examples on GitHub
+  </Card>
+  <Card title="Evaluation" icon="chart-bar" href="/advanced/evaluation">
+    Evaluate model quality with Vertex AI Evaluation
+  </Card>
+  <Card title="Model Garden" icon="seedling" href="/advanced/open-models/model-garden">
+    Browse pre-trained models to fine-tune
+  </Card>
+</CardGroup>

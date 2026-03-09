@@ -1,0 +1,449 @@
+---
+title: "Multimodal Embeddings"
+description: "Generate embeddings for images and videos with Vertex AI's multimodal embedding model"
+---
+
+## Overview
+
+Vertex AI Multimodal Embeddings API generates vector representations for images, videos, and text that share the same semantic space. This enables powerful cross-modal search capabilities, such as finding images using text queries or finding videos similar to an image.
+
+<Note>
+Multimodal embeddings support dimensions of 128, 256, 512, and 1408 (default), allowing you to optimize for speed or accuracy based on your use case.
+</Note>
+
+## Use Cases
+
+<CardGroup cols={2}>
+  <Card title="Image Search" icon="image">
+    Search for products by text description or find visually similar images
+  </Card>
+  
+  <Card title="Video Content Search" icon="video">
+    Find video segments matching text queries or similar videos
+  </Card>
+  
+  <Card title="Visual Recommendations" icon="sparkles">
+    Generate product recommendations based on visual similarity
+  </Card>
+  
+  <Card title="Content Moderation" icon="shield-check">
+    Classify and filter video content using embeddings
+  </Card>
+</CardGroup>
+
+## Installation
+
+```bash
+pip install --upgrade google-cloud-aiplatform
+```
+
+## Setup
+
+```python
+import vertexai
+from vertexai.vision_models import Image, MultiModalEmbeddingModel, Video, VideoSegmentConfig
+
+# Initialize Vertex AI
+PROJECT_ID = "your-project-id"
+LOCATION = "us-central1"
+
+vertexai.init(project=PROJECT_ID, location=LOCATION)
+
+# Load the model
+model = MultiModalEmbeddingModel.from_pretrained("multimodalembedding")
+```
+
+## Text Embeddings
+
+Generate text embeddings using the multimodal model:
+
+```python
+def get_text_embedding(text: str, dimension: int = 1408) -> list[float]:
+    """Generate text embedding"""
+    embedding = model.get_embeddings(
+        contextual_text=text,
+        dimension=dimension,
+    )
+    return embedding.text_embedding
+
+# Generate embedding
+text_emb = get_text_embedding("What is life?")
+print(f"Embedding dimensions: {len(text_emb)}")
+print(f"First 5 values: {text_emb[:5]}")
+```
+
+## Image Embeddings
+
+### From Local File
+
+```python
+from vertexai.vision_models import Image
+
+def get_image_embedding(
+    image_path: str,
+    dimension: int = 1408
+) -> list[float]:
+    """Generate image embedding from local file"""
+    image = Image.load_from_file(image_path)
+    embedding = model.get_embeddings(
+        image=image,
+        dimension=dimension,
+    )
+    return embedding.image_embedding
+
+# Generate embedding
+image_emb = get_image_embedding("product_image.jpg")
+print(f"Embedding dimensions: {len(image_emb)}")
+```
+
+### From Cloud Storage
+
+```python
+# Load image from GCS
+image_path = "gs://your-bucket/images/product.jpg"
+image = Image.load_from_file(image_path)
+
+embedding = model.get_embeddings(
+    image=image,
+    dimension=1408
+)
+
+image_emb = embedding.image_embedding
+```
+
+## Video Embeddings
+
+<Note>
+Video embeddings are generated for individual segments. You can configure segment intervals and offsets.
+</Note>
+
+### Basic Video Embedding
+
+```python
+from vertexai.vision_models import Video, VideoSegmentConfig
+
+def get_video_embedding(
+    video_path: str,
+    dimension: int = 1408,
+    video_segment_config: VideoSegmentConfig = None
+) -> list[list[float]]:
+    """Generate video embeddings for segments"""
+    video = Video.load_from_file(video_path)
+    embedding = model.get_embeddings(
+        video=video,
+        dimension=dimension,
+        video_segment_config=video_segment_config,
+    )
+    return [segment.embedding for segment in embedding.video_embeddings]
+
+# Generate embeddings
+video_path = "gs://your-bucket/videos/demo.mp4"
+video_embeddings = get_video_embedding(video_path)
+
+print(f"Number of segments: {len(video_embeddings)}")
+print(f"First segment dimensions: {len(video_embeddings[0])}")
+```
+
+### Configure Video Segments
+
+<Tabs>
+  <Tab title="Default Segmentation">
+    ```python
+    # Uses default interval (every 16 seconds)
+    video = Video.load_from_file(video_path)
+    embeddings = model.get_embeddings(
+        video=video,
+        dimension=1408
+    )
+    ```
+  </Tab>
+  
+  <Tab title="Custom Intervals">
+    ```python
+    # Custom interval (every 10 seconds)
+    video_config = VideoSegmentConfig(
+        interval_sec=10
+    )
+    
+    embeddings = model.get_embeddings(
+        video=video,
+        dimension=1408,
+        video_segment_config=video_config
+    )
+    ```
+  </Tab>
+  
+  <Tab title="Specific Segments">
+    ```python
+    # Start at 5 seconds, end at 30 seconds
+    video_config = VideoSegmentConfig(
+        start_offset_sec=5,
+        end_offset_sec=30,
+        interval_sec=5
+    )
+    
+    embeddings = model.get_embeddings(
+        video=video,
+        dimension=1408,
+        video_segment_config=video_config
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## Cross-Modal Search
+
+The power of multimodal embeddings is that text, image, and video embeddings share the same semantic space.
+
+### Text-to-Image Search
+
+```python
+import numpy as np
+import pandas as pd
+from IPython.display import Image as ImageDisplay, display
+
+# Load product catalog with pre-computed image embeddings
+products_df = pd.read_csv(
+    "https://storage.googleapis.com/github-repo/embeddings/getting_started_embeddings/image_data_with_embeddings.csv"
+)
+
+def search_images_by_text(query: str, df: pd.DataFrame, top_k: int = 5):
+    """Search images using text query"""
+    # Generate query embedding
+    query_emb = get_text_embedding(query)
+    
+    # Calculate similarities
+    image_embs = df["image_embeddings"]
+    scores = [np.dot(eval(img_emb), query_emb) for img_emb in image_embs]
+    
+    # Get top results
+    df["score"] = scores
+    results = df.nlargest(top_k, "score")
+    
+    # Display results
+    print(results[["score", "title"]])
+    for gcs_path in results["gcs_path"]:
+        public_url = gcs_path.replace("gs://", "https://storage.googleapis.com/")
+        display(ImageDisplay(url=public_url, width=200))
+
+# Search for products
+search_images_by_text("something related to dinosaurs theme", products_df)
+```
+
+### Image-to-Image Search
+
+```python
+def search_similar_images(image_path: str, df: pd.DataFrame, top_k: int = 5):
+    """Find visually similar images"""
+    # Generate query image embedding
+    query_emb = get_image_embedding(image_path)
+    
+    # Calculate similarities with catalog
+    image_embs = df["image_embeddings"]
+    scores = [np.dot(eval(img_emb), query_emb) for img_emb in image_embs]
+    
+    # Get top results
+    df["score"] = scores
+    results = df.nlargest(top_k, "score")
+    
+    return results[["title", "score", "gcs_path"]]
+
+# Find similar products
+results = search_similar_images("query_image.jpg", products_df)
+print(results)
+```
+
+### Text-to-Video Search
+
+```python
+from IPython.display import HTML, display
+
+# Load video catalog with pre-computed embeddings
+videos_df = pd.read_csv(
+    "https://storage.googleapis.com/github-repo/embeddings/getting_started_embeddings/video_data_with_embeddings.csv"
+)
+
+def search_videos_by_text(query: str, df: pd.DataFrame, top_k: int = 5):
+    """Search videos using text query"""
+    # Generate query embedding
+    query_emb = get_text_embedding(query)
+    
+    # Calculate similarities
+    video_embs = df["video_embeddings"]
+    scores = [np.dot(eval(vid_emb), query_emb) for vid_emb in video_embs]
+    
+    # Get top results
+    df["score"] = scores
+    results = df.nlargest(top_k, "score")
+    
+    print(results[["score", "file_name"]])
+    
+    # Display top video
+    top_video_path = results.iloc[0]["gcs_path"]
+    video_url = top_video_path.replace("gs://", "https://storage.googleapis.com/")
+    display(HTML(f'''
+        <video width="640" height="480" controls>
+            <source src="{video_url}" type="video/mp4">
+        </video>
+    '''))
+
+# Search for videos
+search_videos_by_text("A music concert", videos_df)
+```
+
+## Working with DataFrames
+
+Integrate multimodal embeddings into pandas workflows:
+
+```python
+import pandas as pd
+
+# Create DataFrame with image paths
+df = pd.DataFrame({
+    'product_id': [1, 2, 3],
+    'name': ['Product A', 'Product B', 'Product C'],
+    'image_path': [
+        'gs://bucket/product_a.jpg',
+        'gs://bucket/product_b.jpg',
+        'gs://bucket/product_c.jpg'
+    ]
+})
+
+# Generate embeddings for all images
+def generate_embedding(path):
+    return get_image_embedding(path)
+
+df['embedding'] = df['image_path'].apply(generate_embedding)
+print(df.head())
+```
+
+## Similarity Comparison
+
+Compare embeddings across different modalities:
+
+```python
+from sklearn.metrics.pairwise import cosine_similarity
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Generate embeddings for different modalities
+text_embs = [
+    get_text_embedding("A beautiful sunset"),
+    get_text_embedding("Mountains and lakes"),
+    get_text_embedding("City skyline at night")
+]
+
+image_embs = [
+    get_image_embedding("sunset.jpg"),
+    get_image_embedding("mountains.jpg"),
+    get_image_embedding("city.jpg")
+]
+
+# Calculate cross-modal similarity matrix
+all_embeddings = text_embs + image_embs
+similarity_matrix = cosine_similarity(all_embeddings)
+
+# Visualize
+labels = ["Text: Sunset", "Text: Mountains", "Text: City", 
+          "Image: Sunset", "Image: Mountains", "Image: City"]
+
+plt.figure(figsize=(10, 8))
+sns.heatmap(similarity_matrix, annot=True, xticklabels=labels, 
+            yticklabels=labels, cmap="coolwarm")
+plt.title("Cross-Modal Similarity Matrix")
+plt.show()
+```
+
+## Embedding Dimensions
+
+Choose the right dimension based on your needs:
+
+<Tabs>
+  <Tab title="1408 (Default)">
+    **Best for:** Maximum accuracy and semantic richness
+    
+    ```python
+    embedding = model.get_embeddings(
+        image=image,
+        dimension=1408  # or omit parameter
+    )
+    ```
+  </Tab>
+  
+  <Tab title="512">
+    **Best for:** Balance between accuracy and performance
+    
+    ```python
+    embedding = model.get_embeddings(
+        image=image,
+        dimension=512
+    )
+    ```
+  </Tab>
+  
+  <Tab title="256">
+    **Best for:** Faster processing with reasonable accuracy
+    
+    ```python
+    embedding = model.get_embeddings(
+        image=image,
+        dimension=256
+    )
+    ```
+  </Tab>
+  
+  <Tab title="128">
+    **Best for:** Maximum speed and minimum storage
+    
+    ```python
+    embedding = model.get_embeddings(
+        image=image,
+        dimension=128
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+<Steps>
+  <Step title="Optimize Video Segmentation">
+    Choose segment intervals based on your content:
+    - Short intervals (5-10s) for fast-paced content
+    - Longer intervals (15-30s) for slower content
+  </Step>
+  
+  <Step title="Batch Processing">
+    Process multiple images or videos in parallel for better performance
+  </Step>
+  
+  <Step title="Cache Embeddings">
+    Store generated embeddings in Vector Search or a database to avoid regeneration
+  </Step>
+  
+  <Step title="Use Appropriate Dimensions">
+    Start with default 1408 dimensions, then reduce if performance is critical
+  </Step>
+</Steps>
+
+## Supported Formats
+
+### Images
+- JPEG
+- PNG  
+- GIF
+- BMP
+- Maximum size: 10MB
+
+### Videos
+- MP4
+- AVI
+- MOV
+- Maximum duration: 2 hours
+- Maximum size: 2GB
+
+## Next Steps
+
+- [Store embeddings in Vector Search](/embeddings/vector-search) for fast retrieval
+- [Build multimodal RAG applications](https://github.com/GoogleCloudPlatform/generative-ai/blob/main/gemini/use-cases/retrieval-augmented-generation/intro_multimodal_rag.ipynb)
+- [Tune embeddings](/embeddings/text-embeddings#tuning-text-embeddings) for your domain

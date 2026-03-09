@@ -1,0 +1,592 @@
+---
+title: 'Image Editing'
+description: 'Edit and modify images with inpainting, outpainting, and advanced editing techniques'
+---
+
+## Overview
+
+Image editing allows you to modify existing images through various techniques:
+
+- **Inpainting**: Add or remove content within specific regions
+- **Outpainting**: Expand images beyond their original boundaries
+- **Background Editing**: Replace backgrounds while preserving subjects
+- **Mask-free Editing**: Natural language edits without masks
+- **Conversational Editing**: Iterative refinement through chat (Gemini)
+
+## Imagen 3 Editing
+
+### Setup
+
+```python
+from google import genai
+from google.genai.types import (
+    EditImageConfig,
+    Image,
+    MaskReferenceConfig,
+    MaskReferenceImage,
+    RawReferenceImage,
+)
+
+client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+edit_model = "imagen-3.0-capability-001"
+```
+
+## Inpainting
+
+### Inpainting Insert
+
+Add new content to specific regions of an image using masks.
+
+<Tabs>
+  <Tab title="Foreground Mask">
+    Automatically detect and replace foreground objects:
+    
+    ```python
+    # Generate a starting image
+    image_prompt = """
+    a small wooden bowl with grapes and apples on a marble 
+    kitchen counter, light brown cabinets blurred in the background
+    """
+    
+    generated_image = client.models.generate_images(
+        model="imagen-3.0-generate-002",
+        prompt=image_prompt,
+        config=GenerateImagesConfig(
+            number_of_images=1,
+            aspect_ratio="1:1",
+        ),
+    )
+    
+    # Edit the foreground objects
+    edit_prompt = "a small white ceramic bowl with lemons and limes"
+    
+    raw_ref_image = RawReferenceImage(
+        reference_image=generated_image.generated_images[0].image,
+        reference_id=0
+    )
+    
+    mask_ref_image = MaskReferenceImage(
+        reference_id=1,
+        reference_image=None,  # Auto-detect
+        config=MaskReferenceConfig(
+            mask_mode="MASK_MODE_FOREGROUND",
+            mask_dilation=0.1,
+        ),
+    )
+    
+    edited_image = client.models.edit_image(
+        model=edit_model,
+        prompt=edit_prompt,
+        reference_images=[raw_ref_image, mask_ref_image],
+        config=EditImageConfig(
+            edit_mode="EDIT_MODE_INPAINT_INSERTION",
+            number_of_images=1,
+        ),
+    )
+    ```
+  </Tab>
+  
+  <Tab title="Semantic Mask">
+    Target specific object classes using segmentation:
+    
+    ```python
+    image_prompt = """
+    a french bulldog sitting in a living room on a couch with 
+    green throw pillows, a circular mirror on the wall above
+    """
+    
+    generated_image = client.models.generate_images(
+        model="imagen-3.0-generate-002",
+        prompt=image_prompt,
+    )
+    
+    # Replace the dog (class ID 8) with a corgi
+    edit_prompt = "a corgi sitting on a couch"
+    
+    raw_ref_image = RawReferenceImage(
+        reference_image=generated_image.generated_images[0].image,
+        reference_id=0
+    )
+    
+    mask_ref_image = MaskReferenceImage(
+        reference_id=1,
+        reference_image=None,
+        config=MaskReferenceConfig(
+            mask_mode="MASK_MODE_SEMANTIC",
+            segmentation_classes=[8],  # Dog class
+            mask_dilation=0.1,
+        ),
+    )
+    
+    edited_image = client.models.edit_image(
+        model=edit_model,
+        prompt=edit_prompt,
+        reference_images=[raw_ref_image, mask_ref_image],
+        config=EditImageConfig(
+            edit_mode="EDIT_MODE_INPAINT_INSERTION",
+            number_of_images=1,
+        ),
+    )
+    ```
+    
+    <Note>
+      See the [semantic segmentation classes](#semantic-segmentation-classes) section for a complete list of object types.
+    </Note>
+  </Tab>
+  
+  <Tab title="Custom Mask">
+    Provide your own mask image:
+    
+    ```python
+    # Load images from Cloud Storage
+    initial_image = Image.from_file(location="image-dog.png")
+    initial_image_mask = Image.from_file(location="image-dog-mask.png")
+    
+    edit_prompt = "a Persian cat sitting in a white cat bed"
+    
+    raw_ref_image = RawReferenceImage(
+        reference_image=initial_image,
+        reference_id=0
+    )
+    
+    mask_ref_image = MaskReferenceImage(
+        reference_id=1,
+        reference_image=initial_image_mask,  # Your mask
+        config=MaskReferenceConfig(
+            mask_mode="MASK_MODE_USER_PROVIDED",
+            mask_dilation=0.1,
+        ),
+    )
+    
+    edited_image = client.models.edit_image(
+        model=edit_model,
+        prompt=edit_prompt,
+        reference_images=[raw_ref_image, mask_ref_image],
+        config=EditImageConfig(
+            edit_mode="EDIT_MODE_INPAINT_INSERTION",
+            number_of_images=1,
+        ),
+    )
+    ```
+  </Tab>
+</Tabs>
+
+### Inpainting Remove
+
+Remove unwanted objects from images:
+
+```python
+starting_image = Image(
+    gcs_uri="gs://cloud-samples-data/generative-ai/image/mirror.png"
+)
+
+raw_ref_image = RawReferenceImage(
+    reference_image=starting_image,
+    reference_id=0
+)
+
+mask_ref_image = MaskReferenceImage(
+    reference_id=1,
+    reference_image=None,
+    config=MaskReferenceConfig(
+        mask_mode="MASK_MODE_SEMANTIC",
+        segmentation_classes=[85],  # Mirror class
+    ),
+)
+
+remove_image = client.models.edit_image(
+    model=edit_model,
+    prompt="",  # Empty prompt for removal
+    reference_images=[raw_ref_image, mask_ref_image],
+    config=EditImageConfig(
+        edit_mode="EDIT_MODE_INPAINT_REMOVAL",
+        number_of_images=1,
+    ),
+)
+```
+
+## Background Editing
+
+Replace backgrounds while preserving product or subject:
+
+```python
+product_image = Image(
+    gcs_uri="gs://cloud-samples-data/generative-ai/image/suitcase.png"
+)
+
+raw_ref_image = RawReferenceImage(
+    reference_image=product_image,
+    reference_id=0
+)
+
+mask_ref_image = MaskReferenceImage(
+    reference_id=1,
+    reference_image=None,
+    config=MaskReferenceConfig(
+        mask_mode="MASK_MODE_BACKGROUND",
+    ),
+)
+
+prompt = """
+a light blue suitcase in front of a window in an airport, 
+lots of bright natural lighting, planes taking off in the distance
+"""
+
+edited_image = client.models.edit_image(
+    model=edit_model,
+    prompt=prompt,
+    reference_images=[raw_ref_image, mask_ref_image],
+    config=EditImageConfig(
+        edit_mode="EDIT_MODE_BGSWAP",
+        number_of_images=1,
+    ),
+)
+```
+
+<Note>
+  Background swap is perfect for product photography, e-commerce listings, and marketing materials.
+</Note>
+
+## Outpainting
+
+Expand images beyond their original boundaries:
+
+```python
+from PIL import Image as PIL_Image
+import io
+
+# Load original image
+initial_image = Image.from_file(location="living-room.png")
+mask = PIL_Image.new("L", initial_image._pil_image.size, 0)
+
+# Helper function to pad image and mask
+def pad_image_and_mask(image, mask, target_size):
+    image.thumbnail(target_size)
+    mask.thumbnail(target_size)
+    
+    # Add padding around image
+    padded_image = PIL_Image.new("RGB", target_size, (0, 0, 0))
+    padded_mask = PIL_Image.new("L", target_size, 255)
+    
+    # Center the original image
+    x = (target_size[0] - image.width) // 2
+    y = (target_size[1] - image.height) // 2
+    padded_image.paste(image, (x, y))
+    padded_mask.paste(mask, (x, y))
+    
+    return padded_image, padded_mask
+
+# Prepare padded versions
+target_size = (1875, 2500)  # 3:4 aspect ratio
+image_padded, mask_padded = pad_image_and_mask(
+    initial_image._pil_image,
+    mask,
+    target_size
+)
+
+# Convert to Image objects
+def get_bytes_from_pil(pil_image):
+    byte_io = io.BytesIO()
+    pil_image.save(byte_io, "PNG")
+    return byte_io.getvalue()
+
+image_padded_obj = Image(image_bytes=get_bytes_from_pil(image_padded))
+mask_padded_obj = Image(image_bytes=get_bytes_from_pil(mask_padded))
+
+raw_ref_image = RawReferenceImage(
+    reference_image=image_padded_obj,
+    reference_id=0
+)
+
+mask_ref_image = MaskReferenceImage(
+    reference_id=1,
+    reference_image=mask_padded_obj,
+    config=MaskReferenceConfig(
+        mask_mode="MASK_MODE_USER_PROVIDED",
+        mask_dilation=0.03,
+    ),
+)
+
+prompt = "a chandelier hanging from the ceiling"
+
+edited_image = client.models.edit_image(
+    model=edit_model,
+    prompt=prompt,
+    reference_images=[raw_ref_image, mask_ref_image],
+    config=EditImageConfig(
+        edit_mode="EDIT_MODE_OUTPAINT",
+        number_of_images=1,
+    ),
+)
+```
+
+## Mask-Free Editing
+
+Edit images using natural language without masks:
+
+```python
+original_image = Image(
+    gcs_uri="gs://cloud-samples-data/generative-ai/image/latte.jpg"
+)
+
+raw_ref_image = RawReferenceImage(
+    reference_image=original_image,
+    reference_id=0
+)
+
+prompt = """
+swan latte art in the coffee cup and an assortment of red velvet 
+cupcakes in gold wrappers on the white plate
+"""
+
+edited_image = client.models.edit_image(
+    model=edit_model,
+    prompt=prompt,
+    reference_images=[raw_ref_image],  # Only reference image
+    config=EditImageConfig(
+        edit_mode="EDIT_MODE_DEFAULT",
+        number_of_images=1,
+    ),
+)
+```
+
+<Note>
+  Mask-free editing is ideal for subtle changes, style adjustments, and when precise masking isn't needed.
+</Note>
+
+## Gemini Conversational Editing
+
+### Subject Customization
+
+Apply subjects from reference images to new contexts:
+
+```python
+from google.genai.types import Part, GenerateContentConfig, ImageConfig
+
+MODEL_ID = "gemini-2.5-flash-image"
+
+# Load reference image
+with open("dog-1.jpg", "rb") as f:
+    image = f.read()
+
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        Part.from_bytes(
+            data=image,
+            mime_type="image/jpeg",
+        ),
+        "Create a pencil sketch image of this dog wearing a cowboy hat in a western-themed setting.",
+    ],
+    config=GenerateContentConfig(
+        response_modalities=["IMAGE"],
+        image_config=ImageConfig(
+            aspect_ratio="1:1",
+        ),
+    ),
+)
+
+for part in response.candidates[0].content.parts:
+    if part.inline_data:
+        display(Image(data=part.inline_data.data))
+```
+
+### Style Transfer
+
+Transfer style from one image to another:
+
+```python
+# Load style reference (living room)
+with open("living-room.png", "rb") as f:
+    style_image = f.read()
+
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        Part.from_bytes(
+            data=style_image,
+            mime_type="image/png",
+        ),
+        "Using the concepts, colors, and themes from this living room generate a kitchen with the same aesthetic.",
+    ],
+    config=GenerateContentConfig(
+        response_modalities=["IMAGE"],
+        image_config=ImageConfig(
+            aspect_ratio="21:9",
+        ),
+    ),
+)
+```
+
+### Multi-Turn Iterative Editing
+
+Refine images through conversation:
+
+```python
+# Start a chat session
+chat = client.chats.create(model=MODEL_ID)
+
+# First edit: Change color
+response = chat.send_message(
+    message=[
+        Part.from_uri(
+            file_uri="gs://cloud-samples-data/generative-ai/image/perfume.jpg",
+            mime_type="image/jpeg",
+        ),
+        "change the perfume color to a light purple",
+    ],
+    config=GenerateContentConfig(
+        response_modalities=["IMAGE"],
+        image_config=ImageConfig(
+            aspect_ratio="3:2",
+        ),
+    ),
+)
+
+# Save the generated image data
+data = response.candidates[0].content.parts[0].inline_data.data
+
+# Second edit: Add text (continuing the conversation)
+response = chat.send_message(
+    message=[
+        Part.from_bytes(
+            data=data,
+            mime_type="image/jpeg",
+        ),
+        "inscribe the word flowers in French on the perfume bottle in a delicate white cursive font",
+    ],
+    config=GenerateContentConfig(
+        response_modalities=["IMAGE"],
+        image_config=ImageConfig(
+            aspect_ratio="3:2",
+        ),
+    ),
+)
+```
+
+<Note>
+  Multi-turn editing is perfect for iterative design workflows where you refine details progressively.
+</Note>
+
+### Multiple Reference Images
+
+Combine elements from multiple images:
+
+```python
+response = client.models.generate_content(
+    model=MODEL_ID,
+    contents=[
+        Part.from_uri(
+            file_uri="gs://cloud-samples-data/generative-ai/image/suitcase.png",
+            mime_type="image/png",
+        ),
+        Part.from_uri(
+            file_uri="gs://cloud-samples-data/generative-ai/image/woman.jpg",
+            mime_type="image/jpeg",
+        ),
+        "Generate an image of the woman pulling the suitcase in an airport.",
+    ],
+    config=GenerateContentConfig(
+        response_modalities=["TEXT", "IMAGE"],
+        image_config=ImageConfig(
+            aspect_ratio="9:16",
+        ),
+    ),
+)
+```
+
+## Configuration Options
+
+### Mask Dilation
+
+Control how far the mask extends beyond detected boundaries:
+
+```python
+config=MaskReferenceConfig(
+    mask_dilation=0.1,  # 10% expansion (0.0 to 1.0)
+)
+```
+
+### Safety Controls
+
+```python
+config=EditImageConfig(
+    safety_filter_level="BLOCK_MEDIUM_AND_ABOVE",
+    person_generation="ALLOW_ADULT",
+)
+```
+
+## Semantic Segmentation Classes
+
+For `MASK_MODE_SEMANTIC`, use these class IDs:
+
+<Accordion title="View all segmentation classes">
+| Class ID | Object Type | Class ID | Object Type | Class ID | Object Type |
+|----------|-------------|----------|-------------|----------|-------------|
+| 0 | backpack | 50 | carrot | 100 | sidewalk_pavement |
+| 1 | umbrella | 51 | hot_dog | 101 | runway |
+| 2 | bag | 52 | pizza | 102 | terrain |
+| 3 | tie | 53 | donut | 103 | book |
+| 4 | suitcase | 54 | cake | 104 | box |
+| 5 | case | 55 | fruit_other | 105 | clock |
+| 6 | bird | 56 | food_other | 106 | vase |
+| 7 | cat | 57 | chair_other | 107 | scissors |
+| 8 | dog | 58 | armchair | 108 | plaything_other |
+| 9 | horse | 59 | swivel_chair | 109 | teddy_bear |
+| 10 | sheep | 60 | stool | 110 | hair_dryer |
+| 11 | cow | 61 | seat | 111 | toothbrush |
+| 12 | elephant | 62 | couch | 112 | painting |
+| 13 | bear | 63 | trash_can | 113 | poster |
+| 14 | zebra | 64 | potted_plant | 114 | bulletin_board |
+| 15 | giraffe | 65 | nightstand | 115 | bottle |
+| 16 | animal_other | 66 | bed | 116 | cup |
+| 17 | microwave | 67 | table | 117 | wine_glass |
+| 28 | toilet | 78 | bathroom_counter | 128 | motorcyclist |
+| 35 | building | 85 | mirror | 135 | traffic_sign |
+| 42 | television | 92 | stove | 142 | sky |
+| 125 | person | 175 | bicycle | 176 | car |
+| 180 | bus | 181 | train | 182 | truck |
+
+**Common use cases:**
+- `8` - dog
+- `7` - cat  
+- `125` - person
+- `85` - mirror
+- `42` - television
+- `176` - car
+</Accordion>
+
+## Best Practices
+
+<Steps>
+  <Step title="Start with clear reference images">
+    Use high-quality, well-lit images with clear subject boundaries.
+  </Step>
+  
+  <Step title="Write descriptive edit prompts">
+    Be specific about what you want to change and how the result should look.
+  </Step>
+  
+  <Step title="Experiment with mask dilation">
+    Adjust `mask_dilation` if edges appear too sharp or too blurry.
+  </Step>
+  
+  <Step title="Use appropriate edit modes">
+    Choose the right mode for your task:
+    - Inpainting for targeted changes
+    - Background swap for product images
+    - Mask-free for subtle adjustments
+    - Conversational for iterative refinement
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Image Generation" icon="wand-magic-sparkles" href="/vision/image-generation">
+    Learn about text-to-image generation
+  </Card>
+  <Card title="Visual Q&A" icon="comments" href="/vision/visual-qa">
+    Ask questions about images with Gemini
+  </Card>
+</CardGroup>

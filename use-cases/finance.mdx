@@ -1,0 +1,596 @@
+---
+title: 'Finance'
+description: 'Automate KYC processes, risk analysis, and financial document processing with AI'
+---
+
+## Overview
+
+Gemini enables financial institutions to automate Know Your Customer (KYC) processes, analyze risk, process financial documents, and extract insights from unstructured data. This guide demonstrates practical applications using Google Search grounding for real-time information.
+
+## Key Capabilities
+
+<CardGroup cols={2}>
+  <Card title="KYC Automation" icon="id-card">
+    Verify customer identities and assess risk profiles
+  </Card>
+  <Card title="Document Processing" icon="file-invoice-dollar">
+    Extract data from financial statements and reports
+  </Card>
+  <Card title="Risk Analysis" icon="shield-halved">
+    Identify negative news and compliance concerns
+  </Card>
+  <Card title="Real-Time Research" icon="globe">
+    Ground analysis in current web information
+  </Card>
+  <Card title="Fraud Detection" icon="user-shield">
+    Analyze patterns and flag suspicious activities
+  </Card>
+  <Card title="Regulatory Compliance" icon="scale-balanced">
+    Monitor for sanctions, PEPs, and adverse media
+  </Card>
+</CardGroup>
+
+## What is KYC?
+
+Know Your Customer (KYC) is a due diligence process used by financial institutions to:
+- Verify customer identities
+- Assess potential risks of illegal activities
+- Prevent money laundering and terrorist financing
+- Ensure regulatory compliance
+
+### KYC Process Components
+
+1. **Customer Identification**: Verify identity using documents
+2. **Customer Due Diligence (CDD)**: Assess risk level
+3. **Enhanced Due Diligence (EDD)**: Deep investigation for high-risk customers
+4. **Ongoing Monitoring**: Continuous screening for changes
+
+## Setup
+
+### Installation
+
+```bash
+pip install google-genai
+```
+
+### Initialize Client
+
+```python
+import os
+from google import genai
+from google.genai.types import (
+    GenerateContentConfig,
+    GoogleSearch,
+    Tool,
+    Part,
+)
+from pydantic import BaseModel
+
+PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT")
+LOCATION = "us-central1"
+
+client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+```
+
+## KYC Screening with Google Search
+
+### Negative News Screening
+
+Search for adverse media mentions about entities:
+
+```python
+def screen_entity_for_negative_news(
+    entity_name: str,
+    entity_type: str,  # "person", "company", "vessel"
+) -> dict:
+    """Screen entity for negative news using Google Search.
+    
+    Args:
+        entity_name: Name of person, company, or vessel
+        entity_type: Type of entity to search
+        
+    Returns:
+        Screening report with findings and sources
+    """
+    
+    system_instruction = f"""
+You are a KYC compliance analyst specializing in adverse media screening.
+
+Your task:
+1. Search for negative news, scandals, sanctions, or legal issues
+2. Focus on credible sources (major news outlets, official records)
+3. Categorize findings by severity
+4. Provide source URLs for verification
+5. Distinguish between allegations and proven facts
+
+IMPORTANT:
+- Only report substantiated information from reliable sources
+- Clearly indicate when information is alleged vs. confirmed
+- Include publication dates for time-sensitive information
+- Flag any sanctions, PEP status, or criminal records
+    """
+    
+    search_tool = Tool(google_search=GoogleSearch())
+    
+    prompt = f"""
+Conduct a comprehensive negative news screening for:
+
+Entity Name: {entity_name}
+Entity Type: {entity_type}
+
+Search for:
+1. Criminal charges or convictions
+2. Sanctions or watchlist mentions
+3. Fraud or financial crimes
+4. Politically Exposed Person (PEP) status
+5. Negative business practices
+6. Regulatory violations
+7. Corruption allegations
+
+Provide:
+- Summary of findings
+- Risk level (Low, Medium, High, Critical)
+- Specific incidents with dates
+- Source links for each finding
+- Recommendations for next steps
+    """
+    
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
+        config=GenerateContentConfig(
+            system_instruction=system_instruction,
+            tools=[search_tool],
+            temperature=0,  # Deterministic for compliance
+        ),
+    )
+    
+    # Extract grounding metadata (sources)
+    sources = []
+    if hasattr(response, 'candidates') and response.candidates:
+        metadata = response.candidates[0].grounding_metadata
+        if metadata and metadata.search_entry_point:
+            sources = metadata.search_entry_point.rendered_content
+    
+    return {
+        "entity": entity_name,
+        "report": response.text,
+        "sources": sources,
+        "timestamp": datetime.now().isoformat(),
+    }
+```
+
+### Example: Screen Board Candidate
+
+```python
+from datetime import datetime
+
+# Screen a board candidate
+result = screen_entity_for_negative_news(
+    entity_name="John Smith, Former CEO of TechCorp",
+    entity_type="person",
+)
+
+print("=== KYC SCREENING REPORT ===")
+print(f"Entity: {result['entity']}")
+print(f"Date: {result['timestamp']}")
+print(f"\n{result['report']}")
+print(f"\nSources Consulted: {len(result['sources'])}")
+for i, source in enumerate(result['sources'][:5], 1):
+    print(f"  {i}. {source}")
+```
+
+Output:
+
+```markdown
+=== KYC SCREENING REPORT ===
+Entity: John Smith, Former CEO of TechCorp
+Date: 2026-03-09T10:30:00
+
+## Screening Summary
+
+**Risk Level: MEDIUM**
+
+### Findings
+
+#### 1. Securities Fraud Settlement (2022)
+- **Status**: Settled without admission of guilt
+- **Details**: SEC settlement for $2.5M related to TechCorp stock disclosures
+- **Source**: SEC.gov Press Release, March 15, 2022
+- **Impact**: Civil penalty, no criminal charges
+
+#### 2. Shareholder Lawsuit (2021-2023)
+- **Status**: Dismissed
+- **Details**: Class action regarding merger communications
+- **Source**: Federal Court Records, Case No. 21-CV-1234
+- **Outcome**: Dismissed with prejudice, no settlement
+
+#### 3. PEP Status
+- **Status**: Not a Politically Exposed Person
+- **Details**: No government positions or close associations identified
+
+#### 4. Sanctions Screening
+- **OFAC**: No matches
+- **UN Sanctions**: No matches  
+- **EU Sanctions**: No matches
+
+### Recommendations
+
+1. **Enhanced Due Diligence**: Recommended due to SEC settlement
+2. **Review SEC Filing**: Examine settlement details and context
+3. **Reference Checks**: Contact professional references
+4. **Board Approval**: Disclosure of findings to full board
+5. **Ongoing Monitoring**: Quarterly screening for new developments
+
+### Next Steps
+
+- Schedule interview to discuss SEC matter
+- Request written explanation of circumstances
+- Consult legal counsel on board eligibility
+- Document decision-making process
+
+Sources Consulted: 15
+  1. https://www.sec.gov/news/press-release/2022-45
+  2. https://www.reuters.com/business/techcorp-ceo-settles...
+  3. https://www.bloomberg.com/news/articles/techcorp-lawsuit...
+  4. https://www.wsj.com/articles/john-smith-sec-settlement...
+  5. https://pacer.uscourts.gov/case/21-CV-1234
+```
+
+## Structured KYC Reports
+
+### Define Report Schema
+
+```python
+from enum import Enum
+from pydantic import BaseModel, Field
+
+class RiskLevel(Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+class Finding(BaseModel):
+    category: str  # "criminal", "sanctions", "pep", "adverse_media"
+    severity: RiskLevel
+    description: str
+    date: str | None = None
+    source_url: str | None = None
+    verified: bool = False
+
+class KYCReport(BaseModel):
+    entity_name: str
+    entity_type: str
+    screening_date: str
+    overall_risk: RiskLevel
+    findings: list[Finding]
+    sanctions_match: bool
+    pep_status: bool
+    adverse_media_count: int
+    recommendation: str
+    requires_edd: bool  # Enhanced Due Diligence
+    next_review_date: str
+
+# Generate structured report
+response = client.models.generate_content(
+    model="gemini-2.5-flash",
+    contents=f"Conduct KYC screening for: {entity_name}",
+    config=GenerateContentConfig(
+        system_instruction=system_instruction,
+        tools=[Tool(google_search=GoogleSearch())],
+        response_schema=KYCReport,
+        response_mime_type="application/json",
+        temperature=0,
+    ),
+)
+
+kyc_report = response.parsed
+
+# Use in workflow
+if kyc_report.overall_risk in [RiskLevel.HIGH, RiskLevel.CRITICAL]:
+    escalate_to_compliance_team(kyc_report)
+elif kyc_report.requires_edd:
+    trigger_enhanced_due_diligence(kyc_report)
+else:
+    approve_standard_onboarding(kyc_report)
+```
+
+## Financial Document Processing
+
+### Extract Data from Financial Statements
+
+```python
+class FinancialStatement(BaseModel):
+    company_name: str
+    fiscal_year: int
+    currency: str
+    
+    # Income Statement
+    revenue: float
+    gross_profit: float
+    operating_income: float
+    net_income: float
+    
+    # Balance Sheet
+    total_assets: float
+    total_liabilities: float
+    shareholders_equity: float
+    
+    # Cash Flow
+    operating_cash_flow: float
+    investing_cash_flow: float
+    financing_cash_flow: float
+    
+    # Ratios
+    debt_to_equity: float | None = None
+    current_ratio: float | None = None
+    roe: float | None = None  # Return on Equity
+
+def extract_financial_data(statement_pdf_path: str) -> FinancialStatement:
+    """Extract structured financial data from PDF statements."""
+    
+    with open(statement_pdf_path, "rb") as f:
+        pdf_bytes = f.read()
+    
+    extraction_prompt = """
+Extract financial data from this statement.
+
+Calculate financial ratios:
+- Debt-to-Equity = Total Liabilities / Shareholders Equity
+- Current Ratio = Current Assets / Current Liabilities
+- ROE = Net Income / Shareholders Equity
+
+Ensure all amounts are in the same currency unit (millions or thousands).
+    """
+    
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=[
+            extraction_prompt,
+            Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
+        ],
+        config=GenerateContentConfig(
+            response_schema=FinancialStatement,
+            response_mime_type="application/json",
+        ),
+    )
+    
+    return response.parsed
+
+# Process statement
+financials = extract_financial_data("company_10k.pdf")
+
+print(f"Company: {financials.company_name}")
+print(f"FY: {financials.fiscal_year}")
+print(f"Revenue: ${financials.revenue}M")
+print(f"Net Income: ${financials.net_income}M")
+print(f"Debt-to-Equity: {financials.debt_to_equity:.2f}")
+print(f"ROE: {financials.roe:.2%}")
+```
+
+### Analyze Credit Risk
+
+```python
+class CreditRiskAssessment(BaseModel):
+    credit_score: int  # 300-850
+    risk_category: str  # "Excellent", "Good", "Fair", "Poor"
+    default_probability: float  # 0.0 - 1.0
+    recommended_terms: str
+    red_flags: list[str]
+    strengths: list[str]
+    decision: str  # "Approve", "Approve with conditions", "Deny"
+
+def assess_credit_risk(
+    applicant_name: str,
+    financial_statements: list[str],
+    credit_history: str,
+) -> CreditRiskAssessment:
+    """Assess credit risk using financial documents and history."""
+    
+    prompt = f"""
+Assess credit risk for: {applicant_name}
+
+Analyze:
+1. Financial health from statements
+2. Credit payment history
+3. Debt service coverage
+4. Liquidity ratios
+5. Industry risks
+
+Credit History:
+{credit_history}
+    """
+    
+    # Attach financial statement PDFs
+    contents = [prompt]
+    for statement_path in financial_statements:
+        with open(statement_path, "rb") as f:
+            contents.append(
+                Part.from_bytes(data=f.read(), mime_type="application/pdf")
+            )
+    
+    response = client.models.generate_content(
+        model="gemini-2.5-pro",
+        contents=contents,
+        config=GenerateContentConfig(
+            response_schema=CreditRiskAssessment,
+            response_mime_type="application/json",
+        ),
+    )
+    
+    return response.parsed
+```
+
+## Regulatory Compliance
+
+### Monitor Sanction Lists
+
+```python
+def check_sanctions(
+    entity_name: str,
+    entity_type: str,
+    jurisdictions: list[str] = ["OFAC", "UN", "EU"],
+) -> dict:
+    """Check entity against sanction lists."""
+    
+    search_tool = Tool(google_search=GoogleSearch())
+    
+    prompt = f"""
+Search official sanctions lists for: {entity_name}
+
+Check these jurisdictions: {', '.join(jurisdictions)}
+
+For each jurisdiction, search:
+1. Current sanctions lists
+2. Recently added entities
+3. Entity aliases and related parties
+
+Provide:
+- Match status (exact, partial, no match)
+- List name if matched
+- Effective date
+- Reason for sanction
+- Official source URL
+    """
+    
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
+        config=GenerateContentConfig(
+            tools=[search_tool],
+            temperature=0,
+        ),
+    )
+    
+    return {
+        "entity": entity_name,
+        "checked_jurisdictions": jurisdictions,
+        "results": response.text,
+        "timestamp": datetime.now().isoformat(),
+    }
+```
+
+### Generate Compliance Reports
+
+```python
+def generate_compliance_report(
+    customer_name: str,
+    onboarding_date: str,
+    risk_level: str,
+    screening_results: dict,
+) -> str:
+    """Generate comprehensive compliance documentation."""
+    
+    prompt = f"""
+Generate a compliance report for regulatory filing.
+
+Customer: {customer_name}
+Onboarding Date: {onboarding_date}
+Risk Assessment: {risk_level}
+
+Screening Results:
+{screening_results}
+
+Include:
+1. Executive Summary
+2. Customer Profile
+3. Risk Assessment Rationale
+4. Screening Results (KYC, sanctions, PEP)
+5. Due Diligence Performed
+6. Ongoing Monitoring Plan
+7. Approval Signatures Required
+8. Document Retention Requirements
+
+Format for regulatory submission.
+    """
+    
+    response = client.models.generate_content(
+        model="gemini-2.5-pro",
+        contents=prompt,
+        config=GenerateContentConfig(temperature=0),
+    )
+    
+    return response.text
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Use Google Search Grounding">
+    Access real-time information from credible sources
+  </Step>
+  <Step title="Verify Sources">
+    Check grounding metadata for source URLs and credibility
+  </Step>
+  <Step title="Set Temperature to 0">
+    Use deterministic outputs for compliance and risk assessment
+  </Step>
+  <Step title="Implement Human Review">
+    Require compliance officer approval for final decisions
+  </Step>
+  <Step title="Document Everything">
+    Maintain audit trails of AI-assisted decisions
+  </Step>
+  <Step title="Regular Updates">
+    Schedule periodic re-screening for ongoing monitoring
+  </Step>
+  <Step title="Comply with Regulations">
+    Ensure AI usage complies with financial regulations
+  </Step>
+</Steps>
+
+## Use Case Examples
+
+### Customer Onboarding
+
+```python
+def automated_customer_onboarding(customer_data: dict) -> dict:
+    """Automate KYC for new customer onboarding."""
+    
+    # Step 1: Document verification
+    id_verification = verify_identity_documents(
+        customer_data["id_documents"]
+    )
+    
+    # Step 2: Negative news screening
+    screening = screen_entity_for_negative_news(
+        entity_name=customer_data["name"],
+        entity_type="person",
+    )
+    
+    # Step 3: Sanction check
+    sanctions = check_sanctions(
+        entity_name=customer_data["name"],
+        entity_type="person",
+    )
+    
+    # Step 4: Risk assessment
+    risk_level = assess_overall_risk(id_verification, screening, sanctions)
+    
+    # Step 5: Decision
+    if risk_level == "CRITICAL":
+        decision = "DENY"
+    elif risk_level == "HIGH":
+        decision = "ESCALATE_TO_COMPLIANCE"
+    else:
+        decision = "APPROVE"
+    
+    return {
+        "customer": customer_data["name"],
+        "decision": decision,
+        "risk_level": risk_level,
+        "next_steps": generate_next_steps(decision),
+    }
+```
+
+## Related Resources
+
+- [Google Search Grounding](/features/grounding)
+- [Document Processing](/use-cases/document-processing)
+- [Structured Output](/features/structured-output)
+- [Gemini Models](/models/overview)
+
+<Note>
+**Regulatory Compliance**: Ensure your use of AI in financial services complies with relevant regulations including KYC/AML requirements, data privacy laws, and industry standards. Consult legal counsel for guidance.
+</Note>

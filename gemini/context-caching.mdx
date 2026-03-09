@@ -1,0 +1,611 @@
+---
+title: Context Caching
+description: Optimize costs and latency by caching frequently used content with Gemini
+---
+
+# Context Caching
+
+Context caching allows you to store frequently used input tokens in a dedicated cache, eliminating the need to repeatedly pass the same tokens to the model. This significantly reduces costs and improves response times for applications with repeated context.
+
+## Why Use Context Caching?
+
+<CardGroup cols={3}>
+  <Card title="Cost Reduction" icon="dollar-sign">
+    Cached tokens cost ~90% less than regular input tokens
+  </Card>
+  
+  <Card title="Lower Latency" icon="bolt">
+    Skip re-processing of large, repeated content
+  </Card>
+  
+  <Card title="Long Context" icon="book-open">
+    Efficiently handle millions of tokens of context
+  </Card>
+</CardGroup>
+
+## Caching Types
+
+Vertex AI offers two caching mechanisms:
+
+### Implicit Caching (Automatic)
+
+- **Enabled by default** for all Gemini 2.5 and 3 models
+- **No explicit setup required**
+- **Automatic cost savings** for repeated prefixes
+- **Minimum tokens**: 2,048 for Gemini 2.5 models
+- **Best for**: Applications with consistent prefixes
+
+### Explicit Caching (Manual)
+
+- **Developer-controlled** cache creation and management
+- **Guaranteed cost savings** with predictable pricing
+- **Minimum tokens**: 2,048 for all supported models
+- **Cache duration**: 60 minutes default, configurable up to 1 hour
+- **Best for**: Large documents, system instructions, few-shot examples
+
+## Supported Models
+
+| Model | Implicit Caching | Explicit Caching |
+|-------|------------------|------------------|
+| gemini-3.1-pro-preview | ✓ | ✓ |
+| gemini-3-flash-preview | ✓ | ✓ |
+| gemini-2.5-pro | ✓ (cost savings) | ✓ |
+| gemini-2.5-flash | ✓ (cost savings) | ✓ |
+
+## Implicit Caching
+
+### How It Works
+
+Implicit caching automatically identifies common prefixes across requests:
+
+```python
+from google import genai
+from google.genai.types import Part
+
+client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+
+# First request - no cache hit
+response = client.models.generate_content(
+    model="gemini-2.5-flash",
+    contents=[
+        Part.from_uri(
+            file_uri="gs://samples/large-document.pdf",
+            mime_type="application/pdf"
+        ),
+        "Summarize the key findings."
+    ]
+)
+
+print(f"Cached tokens: {response.usage_metadata.cached_content_token_count}")
+# Output: Cached tokens: 0 (first request)
+
+# Second request with same prefix - cache hit!
+response = client.models.generate_content(
+    model="gemini-2.5-flash",
+    contents=[
+        Part.from_uri(
+            file_uri="gs://samples/large-document.pdf",
+            mime_type="application/pdf"
+        ),
+        "List the main conclusions."
+    ]
+)
+
+print(f"Cached tokens: {response.usage_metadata.cached_content_token_count}")
+# Output: Cached tokens: 45000 (cache hit!)
+```
+
+### Optimization Tips
+
+<Steps>
+  <Step title="Place Common Content First">
+    Put large, reusable content at the beginning of prompts:
+    
+    ```python
+    contents = [
+        large_document,      # Common prefix
+        system_instructions, # Common prefix
+        user_query          # Variable content at end
+    ]
+    ```
+  </Step>
+  
+  <Step title="Use Consistent Formatting">
+    Keep content structure identical across requests:
+    
+    ```python
+    # Good: Same structure
+    [doc, "Question: {query}"]
+    
+    # Bad: Varying structure
+    ["Question: {query}", doc]  # Different order
+    ```
+  </Step>
+  
+  <Step title="Send Requests Close Together">
+    Implicit cache lifetime is limited - send related requests in batches
+  </Step>
+</Steps>
+
+### Check Cache Status
+
+Monitor cache hits in usage metadata:
+
+```python
+for i in range(5):
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=[
+            Part.from_uri(
+                file_uri="gs://samples/image.png",
+                mime_type="image/png"
+            ),
+            f"Describe aspect {i+1} of this image."
+        ]
+    )
+    
+    usage = response.usage_metadata
+    print(f"Request {i+1}:")
+    print(f"  Input tokens: {usage.prompt_token_count}")
+    print(f"  Cached tokens: {usage.cached_content_token_count or 0}")
+    print(f"  Output tokens: {usage.candidates_token_count}")
+```
+
+## Explicit Caching
+
+### Create a Cache
+
+Create a named cache for repeated use:
+
+```python
+from google.genai.types import (
+    Content,
+    Part,
+    CreateCachedContentConfig
+)
+
+system_instruction = """
+You are an expert researcher specializing in academic paper analysis.
+Provide detailed, accurate summaries with proper citations.
+"""
+
+# Create cache with large documents
+cached_content = client.caches.create(
+    model="gemini-2.5-flash",
+    config=CreateCachedContentConfig(
+        contents=[
+            Content(
+                role="user",
+                parts=[
+                    Part.from_uri(
+                        file_uri="gs://samples/paper1.pdf",
+                        mime_type="application/pdf"
+                    ),
+                    Part.from_uri(
+                        file_uri="gs://samples/paper2.pdf",
+                        mime_type="application/pdf"
+                    )
+                ]
+            )
+        ],
+        system_instruction=system_instruction,
+        ttl="600s"  # Cache for 10 minutes
+    )
+)
+
+print(f"Cache ID: {cached_content.name}")
+print(f"Expires: {cached_content.expire_time}")
+print(f"Cached tokens: {cached_content.usage_metadata.total_token_count}")
+```
+
+### Use a Cache
+
+Reference the cache in subsequent requests:
+
+```python
+from google.genai.types import GenerateContentConfig
+
+response = client.models.generate_content(
+    model="gemini-2.5-flash",
+    contents="What are the main research contributions?",
+    config=GenerateContentConfig(
+        cached_content=cached_content.name
+    )
+)
+
+print(response.text)
+
+# Check usage
+usage = response.usage_metadata
+print(f"\nCached tokens used: {usage.cached_content_token_count}")
+print(f"New input tokens: {usage.prompt_token_count}")
+print(f"Output tokens: {usage.candidates_token_count}")
+```
+
+### Cache with System Instructions
+
+Include system instructions in the cache:
+
+```python
+system_instruction = """
+You are a helpful coding assistant.
+Always provide:
+1. Clear explanations
+2. Working code examples
+3. Best practices
+4. Common pitfalls to avoid
+"""
+
+cached_content = client.caches.create(
+    model="gemini-3-flash-preview",
+    config=CreateCachedContentConfig(
+        contents=[
+            Content(
+                role="user",
+                parts=[
+                    Part.from_uri(
+                        file_uri="gs://samples/codebase.zip",
+                        mime_type="application/zip"
+                    )
+                ]
+            )
+        ],
+        system_instruction=system_instruction,
+        ttl="3600s"  # 1 hour
+    )
+)
+```
+
+## Cache Management
+
+### Retrieve a Cache
+
+Get cache details by ID:
+
+```python
+retrieved_cache = client.caches.get(name=cached_content.name)
+
+print(f"Model: {retrieved_cache.model}")
+print(f"Created: {retrieved_cache.create_time}")
+print(f"Expires: {retrieved_cache.expire_time}")
+print(f"Token count: {retrieved_cache.usage_metadata.total_token_count}")
+```
+
+### List All Caches
+
+View all caches in your project:
+
+```python
+for cache in client.caches.list():
+    print(f"Cache: {cache.name}")
+    print(f"  Model: {cache.model}")
+    print(f"  Expires: {cache.expire_time}")
+    print(f"  Tokens: {cache.usage_metadata.total_token_count}")
+    print()
+```
+
+### Update Cache Expiration
+
+Extend cache lifetime:
+
+```python
+updated_cache = client.caches.update(
+    name=cached_content.name,
+    config=CreateCachedContentConfig(
+        system_instruction=system_instruction,
+        ttl="3600s"  # Extend to 1 hour
+    )
+)
+
+print(f"New expiration: {updated_cache.expire_time}")
+```
+
+### Delete a Cache
+
+Remove a cache when no longer needed:
+
+```python
+client.caches.delete(name=cached_content.name)
+print("Cache deleted")
+```
+
+## Context Caching in Chat
+
+Use caching with multi-turn conversations:
+
+```python
+chat = client.chats.create(
+    model="gemini-2.5-flash",
+    config=GenerateContentConfig(
+        cached_content=cached_content.name
+    )
+)
+
+# First question
+response = chat.send_message(
+    "What methodology does the first paper use?"
+)
+print(response.text)
+
+# Follow-up questions (reusing cache)
+response = chat.send_message(
+    "How does it compare to the second paper?"
+)
+print(response.text)
+
+response = chat.send_message(
+    "What are the limitations?"
+)
+print(response.text)
+```
+
+## Cache with Multiple Documents
+
+Cache large corpora for RAG applications:
+
+```python
+# Create cache with many documents
+cached_content = client.caches.create(
+    model="gemini-2.5-pro",
+    config=CreateCachedContentConfig(
+        contents=[
+            Content(
+                role="user",
+                parts=[
+                    Part.from_uri(
+                        file_uri="gs://company-docs/handbook.pdf",
+                        mime_type="application/pdf"
+                    ),
+                    Part.from_uri(
+                        file_uri="gs://company-docs/policies.pdf",
+                        mime_type="application/pdf"
+                    ),
+                    Part.from_uri(
+                        file_uri="gs://company-docs/procedures.pdf",
+                        mime_type="application/pdf"
+                    )
+                ]
+            )
+        ],
+        system_instruction="You are a company HR assistant.",
+        ttl="3600s"
+    )
+)
+
+# Use for multiple employee queries
+questions = [
+    "What is the vacation policy?",
+    "How do I request parental leave?",
+    "What are the health insurance options?"
+]
+
+for question in questions:
+    response = client.models.generate_content(
+        model="gemini-2.5-pro",
+        contents=question,
+        config=GenerateContentConfig(
+            cached_content=cached_content.name
+        )
+    )
+    print(f"Q: {question}")
+    print(f"A: {response.text}\n")
+```
+
+## Cache Expiration Strategies
+
+### Time-to-Live (TTL)
+
+Set relative expiration time:
+
+```python
+# Cache for 5 minutes
+config = CreateCachedContentConfig(
+    contents=[...],
+    ttl="300s"
+)
+
+# Cache for 1 hour (maximum)
+config = CreateCachedContentConfig(
+    contents=[...],
+    ttl="3600s"
+)
+```
+
+### Absolute Expiration
+
+Set specific expiration timestamp:
+
+```python
+from datetime import datetime, timedelta
+
+expire_time = datetime.now() + timedelta(hours=1)
+
+config = CreateCachedContentConfig(
+    contents=[...],
+    expire_time=expire_time
+)
+```
+
+## Cost Analysis
+
+### Calculate Savings
+
+```python
+def calculate_cache_savings(usage_metadata):
+    """Calculate cost savings from caching."""
+    cached_tokens = usage_metadata.cached_content_token_count or 0
+    input_tokens = usage_metadata.prompt_token_count
+    
+    # Approximate pricing (check current rates)
+    CACHED_RATE = 0.0001  # Per 1K tokens
+    INPUT_RATE = 0.001    # Per 1K tokens
+    
+    cached_cost = (cached_tokens / 1000) * CACHED_RATE
+    regular_cost = (cached_tokens / 1000) * INPUT_RATE
+    savings = regular_cost - cached_cost
+    
+    return {
+        "cached_tokens": cached_tokens,
+        "cost_with_cache": cached_cost,
+        "cost_without_cache": regular_cost,
+        "savings": savings,
+        "savings_percent": (savings / regular_cost * 100) if regular_cost > 0 else 0
+    }
+
+# Example usage
+response = client.models.generate_content(
+    model="gemini-2.5-flash",
+    contents="Your query",
+    config=GenerateContentConfig(cached_content=cached_content.name)
+)
+
+savings = calculate_cache_savings(response.usage_metadata)
+print(f"Cached tokens: {savings['cached_tokens']:,}")
+print(f"Cost savings: ${savings['savings']:.4f} ({savings['savings_percent']:.1f}%)")
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Cache Large Content" icon="file">
+    Only cache content ≥2,048 tokens for eligibility
+  </Card>
+  
+  <Card title="Monitor Expiration" icon="clock">
+    Refresh caches before they expire for uninterrupted service
+  </Card>
+  
+  <Card title="Use Appropriate TTL" icon="hourglass">
+    Balance cost savings with cache storage costs
+  </Card>
+  
+  <Card title="Track Usage" icon="chart-line">
+    Monitor cached_content_token_count in responses
+  </Card>
+</CardGroup>
+
+### When to Use Caching
+
+✅ **Good Use Cases:**
+- Large, static documents (manuals, papers, codebases)
+- Repeated system instructions
+- Few-shot examples in prompts
+- RAG applications with fixed knowledge bases
+- Multi-turn conversations with shared context
+
+❌ **Not Ideal For:**
+- Frequently changing content
+- Single-use queries
+- Small prompts (less than 2,048 tokens)
+- Real-time data that must be fresh
+
+## Error Handling
+
+```python
+try:
+    cached_content = client.caches.create(
+        model="gemini-2.5-flash",
+        config=CreateCachedContentConfig(
+            contents=[...],
+            ttl="600s"
+        )
+    )
+except Exception as e:
+    if "minimum token count" in str(e):
+        print("Content too small for caching (minimum 2,048 tokens)")
+    elif "quota" in str(e).lower():
+        print("Cache quota exceeded")
+    else:
+        print(f"Cache creation error: {e}")
+
+# Check cache before use
+try:
+    cache = client.caches.get(name=cache_id)
+    if datetime.now() > cache.expire_time:
+        print("Cache expired, creating new one...")
+        # Recreate cache
+except Exception as e:
+    print(f"Cache not found: {e}")
+```
+
+## Advanced Patterns
+
+### Auto-Refreshing Cache
+
+Keep cache alive for long-running applications:
+
+```python
+from datetime import datetime, timedelta
+import time
+
+def create_or_refresh_cache(client, cache_id=None):
+    """Create new cache or refresh existing one."""
+    if cache_id:
+        try:
+            cache = client.caches.get(name=cache_id)
+            # Refresh if expiring soon (within 5 minutes)
+            if cache.expire_time < datetime.now() + timedelta(minutes=5):
+                cache = client.caches.update(
+                    name=cache_id,
+                    config=CreateCachedContentConfig(
+                        system_instruction=system_instruction,
+                        ttl="3600s"
+                    )
+                )
+                print(f"Cache refreshed: {cache.name}")
+            return cache
+        except:
+            pass
+    
+    # Create new cache
+    return client.caches.create(
+        model="gemini-2.5-flash",
+        config=CreateCachedContentConfig(
+            contents=[...],
+            system_instruction=system_instruction,
+            ttl="3600s"
+        )
+    )
+
+# Use in application
+cache_id = None
+for i in range(100):
+    cache = create_or_refresh_cache(client, cache_id)
+    cache_id = cache.name
+    
+    # Use cache for request
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=f"Query {i}",
+        config=GenerateContentConfig(cached_content=cache_id)
+    )
+    
+    time.sleep(60)  # Wait between requests
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Batch Prediction" icon="layer-group" href="/gemini/batch-prediction">
+    Combine caching with batch processing
+  </Card>
+  
+  <Card title="Function Calling" icon="function" href="/gemini/function-calling">
+    Cache function declarations
+  </Card>
+  
+  <Card title="Multimodal" icon="images" href="/gemini/multimodal">
+    Cache large media files
+  </Card>
+  
+  <Card title="Grounding" icon="anchor" href="/gemini/grounding">
+    Cache grounded data sources
+  </Card>
+</CardGroup>
+
+## Resources
+
+- [Context Caching Overview](https://cloud.google.com/vertex-ai/generative-ai/docs/context-cache/context-cache-overview)
+- [Pricing Information](https://cloud.google.com/vertex-ai/pricing)
+- [Supported Models](https://cloud.google.com/vertex-ai/generative-ai/docs/context-cache/context-cache-overview#supported_models)
+- [Best Practices Guide](https://cloud.google.com/vertex-ai/generative-ai/docs/context-cache/context-cache-best-practices)
